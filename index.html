@@ -99,8 +99,11 @@ input.lyin:focus{outline:none;border-bottom-color:var(--accent);background:var(-
 .toptabs{display:flex;background:var(--sunk);border-radius:10px;padding:3px;gap:3px}
 .toptabs button{flex:1;border:0;background:none;border-radius:8px;padding:7px 0;font-weight:700;color:var(--muted)}
 .toptabs button.on{background:var(--paper);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
-.meled{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--paper)}
-.meled svg{display:block;width:100%;height:auto;touch-action:none;-webkit-user-select:none;user-select:none;cursor:crosshair}
+.meled{border:1px solid var(--line);border-radius:8px;overflow-x:hidden;overflow-y:auto;max-height:340px;background:var(--paper);-webkit-overflow-scrolling:touch}
+.meled svg{display:block;width:100%;height:auto;-webkit-user-select:none;user-select:none}
+.edn{touch-action:none}
+.edext{fill:var(--accent);opacity:.3}
+.ednav{justify-content:space-between}
 .edn .body{fill:var(--accent);opacity:.85;cursor:grab}
 .edn .hdl{fill:var(--ink);opacity:.25;cursor:ew-resize}
 .edn.sel .body{opacity:1;stroke:var(--ink);stroke-width:1.5}
@@ -856,7 +859,7 @@ function renderSheet(){
     :(sh.tab==='easy'?'':`<div class="empty">這個和弦目前沒有適合的替代選項。</div>`)}</div>`;
   const topTabs=`<div class="toptabs" role="tablist"><button type="button" role="tab" class="${sh.top!=='mel'?'on':''}" data-act="top" data-t="chord" aria-selected="${sh.top!=='mel'}">和弦</button><button type="button" role="tab" class="${sh.top==='mel'?'on':''}" data-act="top" data-t="mel" aria-selected="${sh.top==='mel'}">旋律${p.melody?' ♪':''}</button></div>`;
   const shTop=`<div class="sh-top"><div class="t">${markOf(pIdx(uid))} ${esc(partName(p))} · 第 ${i+1} 小節</div><button type="button" class="btn sm" data-act="close">關閉</button></div>`;
-  if(sh.top==='mel'){document.getElementById('sheetPn').innerHTML=shTop+topTabs+melTabHTML(p,i);return;}
+  if(sh.top==='mel'){document.getElementById('sheetPn').innerHTML=shTop+topTabs+melTabHTML(p,i);if(!document.getElementById('meledBox')||sh._centered!==uid+':'+i){sh._centered=uid+':'+i;setTimeout(edCenter,0);}return;}
   document.getElementById('sheetPn').innerHTML=`
     ${shTop}${topTabs}
     <div class="sh-chords">${head}</div>
@@ -920,7 +923,8 @@ document.addEventListener('click',e=>{
   else if(act==='playpart'){if(playing){stopAll();return;}const p=pOf(u);playCells(cellsOf(p).map((cell,i)=>({uid:u,i,cell,label:partName(p)})));}
   else if(act==='moodDemo'){const m=MOODS.find(x=>x.id===state.mood);playSeq(m.ex.concat([m.ex[0]]).map(id=>inst(id)));}
   else if(act==='tab'){sh.tab=a.dataset.t;renderSheet();}
-  else if(act==='top'){sh.top=a.dataset.t;renderSheet();}
+  else if(act==='top'){sh.top=a.dataset.t;renderSheet();edCenter();}
+  else if(act==='edbar'){const p=pOf(sh.uid);sh.i=clamp(sh.i+ +a.dataset.d,0,p.len-1);sh.sel=-1;sh.edRange=null;renderSheet();edCenter();}
   else if(act==='edmove')edNudge(+a.dataset.db||0,+a.dataset.dp||0,+a.dataset.dd||0);
   else if(act==='eddel')edDelete();
   else if(act==='edadd')edAdd();
@@ -1472,14 +1476,15 @@ const ED={W:400,G:40,RH:22};
 function edGeom(p,i){
   const N=melNotes(p),s=melShift(p),inBar=N.filter(n=>n.b<4*i+4&&n.b+n.d>4*i);
   let src=inBar.length?inBar:N,lo=99,hi=0;src.forEach(n=>{lo=Math.min(lo,n.p+s);hi=Math.max(hi,n.p+s);});
-  if(!src.length){lo=60+mod(state.key);hi=lo+12;}lo-=3;hi+=3;if(hi-lo<12){const m=(hi+lo)>>1;lo=m-6;hi=m+6;}
+  if(!src.length){lo=60+mod(state.key);hi=lo+12;}lo-=6;hi+=6;if(hi-lo<24){const m=(hi+lo)>>1;lo=m-12;hi=m+12;}
   if(sh.edRange&&sh.edRange.uid===p.uid&&sh.edRange.i===i){lo=Math.min(lo,sh.edRange.lo);hi=Math.max(hi,sh.edRange.hi);}
   sh.edRange={uid:p.uid,i,lo,hi};
   return {lo,hi,rows:hi-lo+1,gw:ED.W-ED.G,s};
 }
 function edNoteRect(n,k,g,i){
-  const x=ED.G+(n.b-4*i)/4*g.gw,w=Math.max(6,n.d/4*g.gw-1.5),y=(g.hi-(n.p+g.s))*ED.RH+2,sel=k===sh.sel;
-  return `<g data-n="${k}" class="edn${sel?' sel':''}"><rect class="body" x="${x.toFixed(1)}" y="${y}" width="${w.toFixed(1)}" height="${ED.RH-4}" rx="4"/><rect class="hdl" data-h="1" x="${(x+w-9).toFixed(1)}" y="${y}" width="9" height="${ED.RH-4}" rx="3"/></g>`;
+  const b0=Math.max(0,n.b-4*i),b1=Math.min(4,n.b+n.d-4*i),x=ED.G+b0/4*g.gw,w=Math.max(6,(b1-b0)/4*g.gw-1.5),y=(g.hi-(n.p+g.s))*ED.RH+2,sel=k===sh.sel;
+  if(n.b<4*i)return `<rect class="edext" x="${x.toFixed(1)}" y="${y}" width="${w.toFixed(1)}" height="${ED.RH-4}" rx="4"/>`; // 從前一小節延續過來的音，只顯示不編輯
+  return `<g data-n="${k}" class="edn${sel?' sel':''}"><rect class="body" x="${x.toFixed(1)}" y="${y}" width="${w.toFixed(1)}" height="${ED.RH-4}" rx="4"/><rect class="hdl" data-h="1" x="${(x+w-14).toFixed(1)}" y="${y}" width="14" height="${ED.RH-4}" rx="3"/></g>`;
 }
 function melEditorSVG(p,i){
   const g=edGeom(p,i),N=melNotes(p),H=g.rows*ED.RH,dia=[0,2,4,5,7,9,11];
@@ -1497,8 +1502,10 @@ function melTabHTML(p,i){
     <div class="row"><button type="button" class="btn pri" data-act="edrec">🎤 錄這段的旋律</button><button type="button" class="btn" data-act="edblank">從空白開始</button></div>`;
   const N=melNotes(p),n=N[sh.sel],inBar=n&&n.b<4*i+4&&n.b+n.d>4*i;
   const hasAud=p.melody.audio&&melAudio[p.melody.audio];
-  return `<p class="hint">拖曳音符：上下改音高、左右改位置；拖右端改長度；點空白處新增一個音。格線是十六分音符。</p>
-    <div class="meled">${melEditorSVG(p,i)}</div>
+  const len=p.len;
+  return `<div class="row ednav"><button type="button" class="btn sm" data-act="edbar" data-d="-1" ${i===0?'disabled':''}>◀ 上一小節</button><span class="hint">第 ${i+1} / ${len} 小節</span><button type="button" class="btn sm" data-act="edbar" data-d="1" ${i===len-1?'disabled':''}>下一小節 ▶</button></div>
+    <p class="hint">按住音符拖曳：上下改音高、左右改位置，拖右端改長度。空白處可以上下滑動看更多音；連點兩下空白處新增一個音。</p>
+    <div class="meled" id="meledBox">${melEditorSVG(p,i)}</div>
     <div class="row edtools">${inBar?`<span class="hint">選取：<b>${noteLabel(n.p+melShift(p))}</b> · 第 ${(n.b-4*i+1).toFixed(2).replace(/\.?0+$/,'')} 拍 · ${n.d} 拍</span>
       <button type="button" class="ib" data-act="edmove" data-dp="1" aria-label="升半音">▲</button><button type="button" class="ib" data-act="edmove" data-dp="-1" aria-label="降半音">▼</button>
       <button type="button" class="ib" data-act="edmove" data-db="-0.25" aria-label="往前">◀</button><button type="button" class="ib" data-act="edmove" data-db="0.25" aria-label="往後">▶</button>
@@ -1509,7 +1516,10 @@ function melTabHTML(p,i){
     ${p.melody.edited&&hasAud?'<p class="hint">這段旋律編輯過了，播放時會用樂器單音（原始錄音不會跟著改）。</p>':''}`;
 }
 function edSound(m){const c=ac();const t=c.currentTime+.01;if(state.inst==='guitar')pluck(m,t,.9,.35);else tone(m,t,.35,1);}
-function edCommit(p){p.fit=melWeights(p,melNotes(p));(p.options||[]).forEach(o=>markUnsure(o,p.fit));renderScore();save();renderSheet();}
+function edCommit(p){p.fit=melWeights(p,melNotes(p));(p.options||[]).forEach(o=>markUnsure(o,p.fit));renderScore();save();edRerender();}
+function edRerender(){const box=document.getElementById('meledBox'),st=box?box.scrollTop:null,pn=document.getElementById('sheetPn'),ps=pn.scrollTop;renderSheet();const nb=document.getElementById('meledBox');if(nb&&st!==null)nb.scrollTop=st;pn.scrollTop=ps;}
+function edCenter(){const box=document.getElementById('meledBox'),svg=document.getElementById('melEd');if(!box||!svg)return;const p=pOf(sh.uid),N=melNotes(p).filter(n=>n.b<4*sh.i+4&&n.b+n.d>4*sh.i),s=melShift(p),hi=+svg.dataset.hi;
+  const k=svg.getBoundingClientRect().width/ED.W;let mid=N.length?N.reduce((a,n)=>a+n.p+s,0)/N.length:60+mod(state.key)+6;box.scrollTop=Math.max(0,(hi-mid)*ED.RH*k-box.clientHeight/2);}
 function edNudge(db,dp,dd){const p=pOf(sh.uid);ensureEditable(p);const n=p.melody.notes[sh.sel];if(!n)return;const i=sh.i;
   n.b=clamp(n.b+db,4*i,4*i+4-.25);n.p=n.p+dp;n.d=clamp(n.d+dd,.25,8);if(dp)edSound(n.p+melShift(p));edCommit(p);}
 function edDelete(){const p=pOf(sh.uid);ensureEditable(p);p.melody.notes.splice(sh.sel,1);sh.sel=-1;edCommit(p);}
@@ -1519,17 +1529,27 @@ function edAdd(){const p=pOf(sh.uid);ensureEditable(p);const i=sh.i,N=p.melody.n
 let edDrag=null;
 function edPt(e,svg){const r=svg.getBoundingClientRect(),k=ED.W/r.width;return {x:(e.clientX-r.left)*k,y:(e.clientY-r.top)*k};}
 document.addEventListener('pointerdown',e=>{
-  const svg=e.target.closest&&e.target.closest('#melEd');if(!svg)return;e.preventDefault();
+  const svg=e.target.closest&&e.target.closest('#melEd');if(!svg)return;
   const p=pOf(sh.uid),i=sh.i,lo=+svg.dataset.lo,hi=+svg.dataset.hi,pt=edPt(e,svg),gw=ED.W-ED.G,s=melShift(p);
   const gEl=e.target.closest('[data-n]');
   if(gEl){ensureEditable(p);const k=+gEl.dataset.n,n=p.melody.notes[k];sh.sel=k;
-    edDrag={k,mode:e.target.dataset.h?'len':'move',x0:pt.x,y0:pt.y,o:{b:n.b,d:n.d,p:n.p},lo,hi,gw,lastP:n.p};
+    e.preventDefault();edDrag={k,mode:e.target.dataset.h?'len':'move',x0:pt.x,y0:pt.y,o:{b:n.b,d:n.d,p:n.p},lo,hi,gw,lastP:n.p};
     svg.querySelectorAll('.edn').forEach(x=>x.classList.toggle('sel',x===gEl));try{svg.setPointerCapture(e.pointerId);}catch(_){}edSound(n.p+s);return;}
-  if(pt.x<ED.G)return;
-  ensureEditable(p);const b=clamp(4*i+Math.floor((pt.x-ED.G)/gw*16)/4,4*i,4*i+3.75),m=hi-Math.floor(pt.y/ED.RH)-s;
-  p.melody.notes.push({b,d:1,p:m});p.melody.notes.sort((x,y)=>x.b-y.b);sh.sel=p.melody.notes.findIndex(n=>n.b===b&&n.p===m);edSound(m+s);edCommit(p);
+  edTap={cx:e.clientX,cy:e.clientY,t:Date.now(),pt,lo,hi,gw};
 });
+let edTap=null,edLastTap=null;
+function edEmptyTap(tp){
+  const p=pOf(sh.uid),i=sh.i,s=melShift(p),now=Date.now();
+  if(edLastTap&&now-edLastTap.t<400&&Math.hypot(tp.cx-edLastTap.cx,tp.cy-edLastTap.cy)<24&&tp.pt.x>=ED.G){
+    edLastTap=null;ensureEditable(p);const b=clamp(4*i+Math.floor((tp.pt.x-ED.G)/tp.gw*16)/4,4*i,4*i+3.75),m=tp.hi-Math.floor(tp.pt.y/ED.RH)-s;
+    p.melody.notes.push({b,d:1,p:m});p.melody.notes.sort((x,y)=>x.b-y.b);sh.sel=p.melody.notes.findIndex(n=>n.b===b&&n.p===m);edSound(m+s);edCommit(p);return;}
+  edLastTap={cx:tp.cx,cy:tp.cy,t:now};
+  if(sh.sel>=0){sh.sel=-1;edRerender();}
+}
+// 按在音符上時擋住捲動；按在空白處就讓畫面正常捲動
+document.addEventListener('touchstart',e=>{if(e.target.closest&&e.target.closest('#melEd [data-n]'))e.preventDefault();},{passive:false});
 document.addEventListener('pointermove',e=>{
+  if(edTap&&Math.hypot(e.clientX-edTap.cx,e.clientY-edTap.cy)>8)edTap=null;
   if(!edDrag)return;const svg=document.getElementById('melEd');if(!svg)return;e.preventDefault();
   const p=pOf(sh.uid),i=sh.i,n=p.melody.notes[edDrag.k],pt=edPt(e,svg),db=Math.round((pt.x-edDrag.x0)/edDrag.gw*16)/4,dp=-Math.round((pt.y-edDrag.y0)/ED.RH),s=melShift(p);
   if(edDrag.mode==='move'){n.b=clamp(edDrag.o.b+db,4*i,4*i+4-.25);n.p=clamp(edDrag.o.p+dp,edDrag.lo-s,edDrag.hi-s);}
@@ -1537,7 +1557,8 @@ document.addEventListener('pointermove',e=>{
   if(n.p!==edDrag.lastP){edDrag.lastP=n.p;edSound(n.p+s);}
   const gEl=svg.querySelector(`[data-n="${edDrag.k}"]`);if(gEl)gEl.outerHTML=edNoteRect(n,edDrag.k,{lo:edDrag.lo,hi:edDrag.hi,gw:edDrag.gw,s},i);
 });
-document.addEventListener('pointerup',()=>{if(!edDrag)return;const p=pOf(sh.uid);edDrag=null;p.melody.notes.forEach((n,k)=>n._k=k);const selN=p.melody.notes[sh.sel];p.melody.notes.sort((x,y)=>x.b-y.b);sh.sel=p.melody.notes.indexOf(selN);p.melody.notes.forEach(n=>delete n._k);edCommit(p);});
+document.addEventListener('pointercancel',()=>{edTap=null;});
+document.addEventListener('pointerup',()=>{if(edTap){const tp=edTap;edTap=null;if(Date.now()-tp.t<350)edEmptyTap(tp);return;}if(!edDrag)return;const p=pOf(sh.uid);edDrag=null;p.melody.notes.forEach((n,k)=>n._k=k);const selN=p.melody.notes[sh.sel];p.melody.notes.sort((x,y)=>x.b-y.b);sh.sel=p.melody.notes.indexOf(selN);p.melody.notes.forEach(n=>delete n._k);edCommit(p);});
 
 /* ---------- 開始 ---------- */
 load();if(state.melMode==='synth')state.melMode='inst';renderAddBtns();renderAll();loadMelAudio();
