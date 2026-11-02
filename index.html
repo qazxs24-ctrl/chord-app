@@ -130,6 +130,9 @@ input.lyin:focus{outline:none;border-bottom-color:var(--accent);background:var(-
 .pickbtn{border:1px solid var(--line);background:var(--paper);border-radius:6px;font-size:12px;padding:1px 8px;margin-bottom:4px}
 .cand.sel .pickbtn{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .warnt{color:var(--fD)}
+.recnow{display:flex;align-items:center;gap:10px;font-size:16px;padding:10px 0}
+.recnow .dot{width:12px;height:12px;border-radius:50%;background:var(--fD);animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.25}}
 input[type=file]{font-size:13px;color:var(--muted)}
 .qgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px}
 .qc{border:1px solid var(--line);background:var(--sunk);border-radius:8px;padding:5px 4px;display:flex;flex-direction:column;align-items:center;gap:0}
@@ -198,7 +201,7 @@ label.f input{padding:8px 10px;font-size:15px}
 .toast:not(.act) button{display:none}
 textarea{width:100%;min-height:220px;font-family:var(--font-m);font-size:12.5px;background:var(--sunk);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:10px}
 @media (max-width:520px){.tools .lbl{display:none}.tools .gap{flex:0 0 4px}.ib{min-width:28px;padding:0 6px}.paper{padding:18px 10px 24px}.meas .nm{font-size:19px}.chips{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
 </style>
 </head>
 <body>
@@ -211,6 +214,7 @@ textarea{width:100%;min-height:220px;font-family:var(--font-m);font-size:12.5px;
         <label for="bpm">♩ = <input id="bpm" type="number" min="50" max="190"></label>
         <label for="capo">移調夾 <select id="capo"></select></label>
         <span class="seg" id="instr" role="group" aria-label="試聽音色"><button type="button" data-v="guitar">吉他</button><button type="button" data-v="piano">鋼琴</button></span>
+        <span class="seg" id="melT" role="group" aria-label="旋律播放"><button type="button" data-v="auto">旋律：錄音</button><button type="button" data-v="synth">合成</button><button type="button" data-v="off">關</button></span>
         <span class="seg" id="diagT" role="group" aria-label="按法圖"><button type="button" data-v="1">按法圖</button><button type="button" data-v="0">隱藏</button></span>
       </div>
       <button type="button" class="capohint" id="capoHint"></button>
@@ -249,6 +253,10 @@ textarea{width:100%;min-height:220px;font-family:var(--font-m);font-size:12.5px;
 <div class="sheet" id="recDlg" hidden>
   <div class="bd" data-act="recclose"></div>
   <div class="pn" id="recPn" role="dialog" aria-modal="true" aria-label="從哼唱錄音產生和弦"></div>
+</div>
+<div class="sheet" id="melDlg" hidden>
+  <div class="bd" data-act="melclose"></div>
+  <div class="pn" id="melPn" role="dialog" aria-modal="true" aria-label="錄旋律"></div>
 </div>
 <div class="toast" id="toast" role="status"><span id="toastT"></span><button type="button" id="toastB">復原</button></div>
 <script>
@@ -389,7 +397,7 @@ const diffOf=c=>{const l=vlist(c);return l.length?l[0].d:9;};
 const cellDiff=cell=>Math.max(...cell.chords.map(diffOf));
 
 /* ---------- 狀態 ---------- */
-let state={title:'',key:0,bpm:80,inst:'guitar',capo:0,mood:null,sub:'',showDiag:true,parts:[]};
+let state={title:'',key:0,bpm:80,inst:'guitar',capo:0,mood:null,sub:'',showDiag:true,melMode:'auto',parts:[]};
 const STORE='chordapp-v2';
 function save(){try{localStorage.setItem(STORE,JSON.stringify(state));}catch(e){}}
 function load(){try{const s=JSON.parse(localStorage.getItem(STORE)||'null');if(s&&Array.isArray(s.parts)){state=Object.assign(state,s);}}catch(e){}}
@@ -426,20 +434,22 @@ function beam(sec,opt){
             if(i===L-1&&!sec.end.includes(c.lib))continue;
             if(prev&&resOf(prev)!==undefined&&c.r!==resOf(prev))continue;
             if(i===L-1&&kindOf(c)==='sec')continue;
+            if(opt.fit&&kindOf(c)==='sec')continue;
           }
-          const t=prev?T(prev,c):3;
+          const t=prev?(opt.fit&&same(prev,c)?3.5:T(prev,c)):3;
           if(strict&&!locked&&prev&&t<(i===0?3:1.5))continue;
           let jn=0;
           if(i===L-1&&opt.nextStart){const tn=T(cell.chords[cell.chords.length-1],opt.nextStart);if(strict&&!locked&&tn<3)continue;jn=tn*.8;}
           let rep=0;const p=b.path;
-          if(p.length&&same(p[p.length-1].chords[0],c))rep+=.7;
+          if(p.length&&same(p[p.length-1].chords[0],c))rep+=opt.fit?.2:.7;
           if(p.length>1&&same(p[p.length-1].chords[0],c)&&same(p[p.length-2].chords[0],c))rep+=1;
           rep+=p.filter(x=>same(x.chords[0],c)).length*(opt.fit?.15:.6);
           if(kindOf(c)==='bor'&&p.some(x=>kindOf(x.chords[0])==='bor'))rep+=2.5;
           const E=c.lib?(opt.fit?1+(W(c.lib)-1)*.4:W(c.lib)):1;
           const F=opt.fit?5*fitScore(c,opt.fit[i]):0;
-          let cad=0;if(opt.fit&&!locked){if(kindOf(c)==='sec')cad-=.8;if(c.lib==='iii')cad-=.25;if(i===0&&!opt.prevEnd)cad+=c.lib==='I'?.6:c.lib==='vi'?.2:0;if(i===L-1)cad+=c.lib==='I'?1.8:c.lib==='V'?.4:0;else if((i+1)%4===0)cad+=(c.lib==='I'||c.lib==='V')?.8:(c.lib==='vi'||c.lib==='IV')?.2:0;}
-          const s=t*E*(opt.fit?.55:1)+jn+F+cad-(opt.fit?.3:.8)*Math.abs(tension(c)-target)-rep,noise=Math.random()*opt.temp;
+          let cad=0;if(opt.fit&&!locked){if(kindOf(c)==='sec')cad-=.8;if(c.lib==='iii')cad-=.25;if(i===0&&!opt.prevEnd)cad+=c.lib==='I'?.6:c.lib==='vi'?.2:0;if(i===L-1)cad+=c.lib==='I'?2.6:c.lib==='V'?.4:0;else if((i+1)%4===0)cad+=(c.lib==='I'||c.lib==='V')?.8:(c.lib==='vi'||c.lib==='IV')?.2:0;}
+          const endFit=opt.fit&&i===L-1;
+          const s=t*E*(opt.fit?.55:1)+jn+F+cad-(endFit?0:(opt.fit?.3:.8)*Math.abs(tension(c)-target))-(endFit?0:rep),noise=Math.random()*opt.temp;
           nx.push({path:[...p,locked?locked:cell],score:b.score+s+noise,clean:(b.clean||0)+s});
         }
       }
@@ -589,6 +599,7 @@ function playCells(list){
     it.cell.chords.forEach((ch,j)=>{const st=t+j*span;
       if(state.inst==='guitar'){playChord(ch,st,span,.9,false);if(n===1){playChord(ch,st+2*beat,beat,.6,false);playChord(ch,st+3*beat,beat,.5,true);}else playChord(ch,st+beat,beat,.5,true);}
       else playChord(ch,st,span,.9,false);});
+    scheduleMelBar(melSource(pOf(it.uid),it.mel),it.i,t,beat);
     timers.push(setTimeout(()=>highlight(it),(t-c.currentTime)*1000));t+=4*beat;});
   timers.push(setTimeout(stopAll,(t-c.currentTime)*1000+200));
 }
@@ -619,13 +630,13 @@ function measHTML(p,i,cell,len){
   const cls=['meas'];if(i%4===0)cls.push('first');if(i===len-1)cls.push('end');
   const ly=cell?cell.lyric:((p.lyrics&&p.lyrics[i])||'');
   let inner,label;
-  if(!cell||!cell.chords.length){cls.push('blank');inner=`<div class="chd"><span class="one"><span class="nm">—</span></span></div>${staffSVG(1,true)}`;label=`第 ${i+1} 小節，還沒有和弦。長按可以自選和弦`;}
+  if(!cell||!cell.chords.length){cls.push('blank');inner=`<div class="chd"><span class="one"><span class="nm">—</span></span></div>${p.melody&&p.melody.notes.length?melodySVG(p,i):staffSVG(1,true)}`;label=`第 ${i+1} 小節，還沒有和弦。長按可以自選和弦`;}
   else{
     const two=cell.chords.length>1;if(two)cls.push('two');
     const big=state.showDiag?(two?30:38):0;
     const chd=cell.chords.map(c=>`<span class="one"><span><span class="nm f-${fn(c)}${kindOf(c)==='bor'?' bor':''}">${esc(chordName(c))}</span><br><span class="rm">${esc(romanOf(c))}</span></span>${big?`<span class="dg">${diagram(curV(c),big,false)}</span>`:''}</span>`).join('');
     const cap=state.capo?`<div class="cap">實際 ${cell.chords.map(c=>esc(chordName(c,true))).join(' ')}</div>`:'';
-    inner=`${cell.locked?LOCK:''}${cell.unsure?'<span class="unsure" title="旋律跟這個和弦不太吻合">?</span>':''}<div class="chd">${chd}</div>${cap}${staffSVG(cell.chords.length,false)}`;
+    inner=`${cell.locked?LOCK:''}${cell.unsure?'<span class="unsure" title="旋律跟這個和弦不太吻合">?</span>':''}<div class="chd">${chd}</div>${cap}${p.melody&&p.melody.notes.length?melodySVG(p,i):staffSVG(cell.chords.length,false)}`;
     label=`第 ${i+1} 小節 ${cell.chords.map(c=>chordName(c)).join('、')}。按一下試聽，長按打開詳情`;
   }
   return `<div class="${cls.join(' ')}" id="m-${p.uid}-${i}">
@@ -644,13 +655,14 @@ function partHTML(p,idx){
   const lenOpts=[2,4,6,8,12,16].map(l=>`<option value="${l}"${p.len===l?' selected':''}>${l} 小節</option>`).join('');
   const measures=Array.from({length:p.len},(_,i)=>measHTML(p,i,cells?cells[i]:null,p.len)).join('');
   return `<section class="part" id="part-${p.uid}" aria-label="${esc(partName(p))}">
-    <div class="ph"><span class="mark">${markOf(idx)}</span><span class="pname">${esc(partName(p))}</span>${p.fit?'<span class="badge">依哼唱</span>':''}
+    <div class="ph"><span class="mark">${markOf(idx)}</span><span class="pname">${esc(partName(p))}</span>${p.melody?'<span class="badge">♪ 有旋律</span>':p.fit?'<span class="badge">依哼唱</span>':''}
       <select data-act="len" data-u="${p.uid}" aria-label="小節數">${lenOpts}</select>
       <select data-act="pmood" data-u="${p.uid}" aria-label="這段的情緒">${moodOpts}</select></div>
     <div class="tools">
       ${cells?`<span class="lbl">方案</span>${p.options.map((_,k)=>`<button type="button" class="ib${k===p.pick?' on':''}" data-act="pick" data-u="${p.uid}" data-k="${k}" aria-pressed="${k===p.pick}">${k+1}</button>`).join('')}
       <button type="button" class="ib" data-act="regen" data-u="${p.uid}">↻ 重產生</button>
       <button type="button" class="ib" data-act="playpart" data-u="${p.uid}" aria-label="播放這段" title="播放這段">▶</button><span class="gap"></span>`:''}
+      <button type="button" class="ib" data-act="mel" data-u="${p.uid}" aria-label="錄這段的旋律" title="錄這段的旋律">🎤</button>
       <button type="button" class="ib" data-act="up" data-u="${p.uid}" ${idx===0?'disabled':''} aria-label="往前移">↑</button>
       <button type="button" class="ib" data-act="down" data-u="${p.uid}" ${idx===n-1?'disabled':''} aria-label="往後移">↓</button>
       <button type="button" class="ib" data-act="dup" data-u="${p.uid}" aria-label="複製這段" title="複製這段">⧉</button>
@@ -683,6 +695,7 @@ function renderSettings(){
   document.getElementById('bpm').value=state.bpm;document.getElementById('title').value=state.title||'';
   document.querySelectorAll('#instr button').forEach(b=>b.classList.toggle('on',b.dataset.v===state.inst));
   document.querySelectorAll('#diagT button').forEach(b=>b.classList.toggle('on',(b.dataset.v==='1')===state.showDiag));
+  document.querySelectorAll('#melT button').forEach(b=>b.classList.toggle('on',b.dataset.v===(state.melMode||'auto')));
 }
 function songDiff(capo){const sv=state.capo;state.capo=capo;let sum=0;state.parts.forEach(p=>{const c=cellsOf(p);if(c)c.forEach(x=>x.chords.forEach(ch=>{sum+=diffOf(ch);}));});state.capo=sv;return sum;}
 function renderCapoHint(){
@@ -889,6 +902,14 @@ document.addEventListener('click',e=>{
   else if(act==='jplay')playJoint(a.dataset.a,a.dataset.b);
   else if(act==='jfix')fixJoint(a.dataset.a,a.dataset.b);
   else if(act==='rec')openRec();
+  else if(act==='mel')openMel(u);
+  else if(act==='melclose')closeMel();
+  else if(act==='melgo')melGo();
+  else if(act==='melstop'){if(mel.stop)mel.stop(false);}
+  else if(act==='melplay'){if(playing){stopAll();return;}melPreview();}
+  else if(act==='melsave')melSave();
+  else if(act==='melredo'){stopAll();mel.phase='idle';renderMel();}
+  else if(act==='meldel'){const p=pOf(mel.uid);delete p.melody;delete p.fit;(p.options||[]).forEach(o=>o.forEach(c=>c.unsure=false));renderScore();save();renderMel();toast('已刪除這段的旋律');}
   else if(act==='pq'){sh.pr=+a.dataset.r;sh.pq=a.dataset.q;renderSheet();playSeq([makeChord(sh.pr,sh.pq)]);}
   else if(act==='pr'){sh.pr=+a.dataset.r;renderSheet();playSeq([makeChord(sh.pr,sh.pq)]);}
   else if(act==='pqq'){sh.pq=a.dataset.q;renderSheet();playSeq([makeChord(sh.pr,sh.pq)]);}
@@ -920,11 +941,12 @@ document.addEventListener('input',e=>{
 document.addEventListener('keydown',e=>{
   if(e.target.dataset&&e.target.dataset.ly&&e.key==='Enter'){e.preventDefault();const all=[...document.querySelectorAll('.lyin')];const k=all.indexOf(e.target);if(all[k+1])all[k+1].focus();else e.target.blur();return;}
   const h=e.target.closest&&e.target.closest('.hit');if(h&&(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')||e.key==='i')){e.preventDefault();openSheet(h.dataset.u,h.dataset.i);return;}
-  if(e.key==='Escape'){if(!document.getElementById('recDlg').hidden){closeRec();return;}if(!document.getElementById('sheet').hidden)closeSheet();document.getElementById('copyDlg').hidden=true;}});
+  if(e.key==='Escape'){if(!document.getElementById('melDlg').hidden){closeMel();return;}if(!document.getElementById('recDlg').hidden){closeRec();return;}if(!document.getElementById('sheet').hidden)closeSheet();document.getElementById('copyDlg').hidden=true;}});
 document.getElementById('key').addEventListener('change',e=>{state.key=+e.target.value;renderAll();});
 document.getElementById('capo').addEventListener('change',e=>{state.capo=+e.target.value;renderAll();});
 document.getElementById('bpm').addEventListener('change',e=>{state.bpm=clamp(+e.target.value||80,50,190);e.target.value=state.bpm;updateNow();save();});
 document.getElementById('instr').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;state.inst=b.dataset.v;renderSettings();save();});
+document.getElementById('melT').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;state.melMode=b.dataset.v;renderSettings();save();});
 document.getElementById('diagT').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;state.showDiag=b.dataset.v==='1';renderSettings();renderScore();save();});
 document.getElementById('capoHint').addEventListener('click',e=>{const c=e.currentTarget.dataset.capo;if(c==='')return;state.capo=+c;renderAll();toast('已套用移調夾，實際音高不變');});
 document.getElementById('playAll').addEventListener('click',()=>{
@@ -1007,7 +1029,7 @@ function refineFit(cells,W,prevEnd,nextStart){
   const C=FITCANDS();
   cells.forEach((cell,b)=>{const w=W[b];if(!w||Array.isArray(w)||cell.locked)return;const X=cell.chords[0],h=w.h;
     const s0=h[0].reduce((a,v)=>a+v,0),s1=h[1].reduce((a,v)=>a+v,0);
-    if(s0>0&&s1>0&&cell.chords.length===1){
+    if(s0>0&&s1>0&&cell.chords.length===1&&!(b===cells.length-1&&X.lib==='I')){
       const P=b>0?cells[b-1].chords[cells[b-1].chords.length-1]:prevEnd,N=b<cells.length-1?cells[b+1].chords[0]:nextStart;
       let A=null,B=null,fa=-9,fb=-9;
       C.forEach(c=>{const a1=halfFit(c,h[0])-(P&&T(P,c)<2?1:0);if(a1>fa){fa=a1;A=c;}const b1=halfFit(c,h[1])-(N&&T(c,N)<2?1:0);if(b1>fb){fb=b1;B=c;}});
@@ -1163,6 +1185,7 @@ async function onRecFile(file){
     if(buf.duration>125)throw new Error('long');
     rec.buf=buf;const SR=16000,off=new OfflineAudioContext(1,Math.ceil(buf.duration*SR),SR),s=off.createBufferSource();s.buffer=buf;s.connect(off.destination);s.start();
     const r=await off.startRendering();
+    rec.pcm16=r.getChannelData(0);
     rec.pitch=await yin(r.getChannelData(0),SR,f=>{const el=document.getElementById('recProg');if(el)el.textContent=`分析中… ${Math.round(f*100)}%`;});
     rec.notes=notesFromPitch();rec.busy=false;
     if(!rec.notes.length){rec.err='錄音裡沒有偵測到清楚的旋律。請靠近麥克風、用「啦」或「嘟」清楚地哼，避免背景音樂。';rec.pitch=null;}
@@ -1188,7 +1211,10 @@ function applyRec(){
   const keyChanged=state.parts.length&&rec.key!==state.key;
   state.key=rec.key;state.bpm=rec.bpmUsed;
   const n=rec.bars,chunks=[];if(n>16){for(let a=0;a<n;a+=8)chunks.push([a,Math.min(n,a+8)]);}else chunks.push([0,n]);
-  chunks.forEach(([a,b])=>state.parts.push({uid:newUid(),type:rec.type,len:b-a,mood:'',pick:rec.sel,
+  const beat=60/rec.bpmUsed,aid=newUid();
+  if(rec.pcm16){const a={pcm:rec.pcm16,sr:16000,offset:rec.start,bpm:rec.bpmUsed,key:rec.key};melAudio[aid]=a;idb.put(aid,{pcm:a.pcm,sr:a.sr,offset:a.offset,bpm:a.bpm,key:a.key});}
+  const melOf=(a,b)=>({key:rec.key,audio:rec.pcm16?aid:null,offB:4*a,notes:rec.notes.map(n=>({b:(n.t-rec.start)/beat-4*a,d:n.d/beat,p:n.p})).filter(n=>n.b+n.d>0&&n.b<4*(b-a))});
+  chunks.forEach(([a,b])=>state.parts.push({uid:newUid(),type:rec.type,len:b-a,mood:'',pick:rec.sel,melody:melOf(a,b),
     options:o0.map(o=>o.slice(a,b).map(c=>({chords:JSON.parse(JSON.stringify(c.chords)),locked:false,lyric:'',unsure:!!c.unsure}))),fit:rec.fitW.slice(a,b)}));
   closeRec();renderAll();
   const first=document.getElementById('part-'+state.parts[state.parts.length-chunks.length].uid);if(first)first.scrollIntoView({block:'start'});
@@ -1203,6 +1229,10 @@ function stopMetro(){if(metro){clearInterval(metro);metro=null;}const b=document
 document.addEventListener('change',e=>{
   const t=e.target;
   if(t.id==='recFile')onRecFile(t.files[0]);
+  else if(t.id==='melFile')onMelFile(t.files[0]);
+  else if(t.id==='melBack')mel.backing=t.checked;
+  else if(t.id==='melRefit')mel.refit=t.checked;
+  else if(t.id==='melShiftR'){mel.nudge=+t.value/1000;mel.notes=curMelNotes();renderMel();const r=document.getElementById('melShiftR');if(r)r.focus();}
   else if(t.id==='recBpm')setRecBpm(t);
   else if(t.id==='recType')rec.type=t.value;
   else if(t.id==='recOff'){rec.offset=+t.value;if(rec.notes)analyzeRec();renderRecResult();const r=document.getElementById('recOff');if(r)r.focus();}
@@ -1210,12 +1240,178 @@ document.addEventListener('change',e=>{
 });
 let bpmT=null;
 function setRecBpm(t){clearTimeout(bpmT);const v=clamp(+t.value||80,50,190);if(v===rec.bpm)return;rec.bpm=v;if(rec.notes&&rec.notes.length){autoAlign();analyzeRec();renderRecResult();}}
-document.addEventListener('input',e=>{if(e.target.id==='recBpm'){const t=e.target;clearTimeout(bpmT);if(+t.value>=50&&+t.value<=190)bpmT=setTimeout(()=>setRecBpm(t),500);}
+document.addEventListener('input',e=>{if(e.target.id==='melShiftR'){const l=e.target.closest('label');if(l&&l.firstChild)l.firstChild.textContent=`對齊微調（${e.target.value} 毫秒）`;}
+  if(e.target.id==='recBpm'){const t=e.target;clearTimeout(bpmT);if(+t.value>=50&&+t.value<=190)bpmT=setTimeout(()=>setRecBpm(t),500);}
   if(e.target.id==='recOff'){const l=e.target.closest('label');const v=+e.target.value;if(l&&l.firstChild)l.firstChild.textContent=`起拍位置（${v>0?`弱起 ${v} 拍`:v<0?`從第 ${1-v} 拍開始唱`:'從第 1 拍開始唱'}）`;}});
 window.addEventListener('resize',()=>{if(!document.getElementById('recDlg').hidden)drawRoll();});
 
+
+/* ---------- 旋律：錄音、儲存、顯示、播放 ---------- */
+const melAudio={}; // audio id → {pcm:Float32Array, sr, offset(秒，第 0 拍在 pcm 的位置), bpm, key}
+const idb={db:null,
+  open(){return new Promise(res=>{try{const r=indexedDB.open('chordapp',1);r.onupgradeneeded=()=>r.result.createObjectStore('audio');r.onsuccess=()=>{idb.db=r.result;res(r.result);};r.onerror=()=>res(null);}catch(e){res(null);}});},
+  async put(k,v){const db=idb.db||await idb.open();if(!db)return;try{db.transaction('audio','readwrite').objectStore('audio').put(v,k);}catch(e){}},
+  async get(k){const db=idb.db||await idb.open();if(!db)return null;return new Promise(res=>{try{const q=db.transaction('audio').objectStore('audio').get(k);q.onsuccess=()=>res(q.result||null);q.onerror=()=>res(null);}catch(e){res(null);}});}
+};
+function notesFrom(P){
+  const fr=[];P.m.forEach(x=>{if(x!==null)fr.push(x-Math.round(x));});fr.sort((a,b)=>a-b);
+  const off=fr.length?fr[fr.length>>1]:0,notes=[],tf=i=>P.t0+i*P.hop,R=P.rms||[];let cur=null;
+  const end=c=>{const dur=(c.last-c.i0+1)*P.hop;if(dur<.09)return;const v=c.vals.slice().sort((a,b)=>a-b);notes.push({t:tf(c.i0),d:dur,p:Math.round(v[v.length>>1])});};
+  P.m.forEach((x,i)=>{if(x===null){if(cur)end(cur);cur=null;return;}const y=x-off,r=R[i]||0;
+    const reattack=cur&&cur.dip&&r>cur.dipV*1.6&&r>cur.peak*.6;
+    if(cur&&Math.abs(y-cur.ref)<.6&&!reattack){cur.vals.push(y);cur.ref=cur.ref*.8+y*.2;cur.last=i;if(r>cur.peak)cur.peak=r;if(r<cur.peak*.55){if(!cur.dip||r<cur.dipV){cur.dip=true;cur.dipV=r;}}}
+    else{if(cur){if(reattack)cur.last=i-1;end(cur);}cur={i0:i,last:i,vals:[y],ref:y,peak:r,dip:false,dipV:r};}});
+  if(cur)end(cur);
+  return {notes,tune:off};
+}
+function melShift(p){if(!p.melody)return 0;const d=mod(state.key-p.melody.key);return d>6?d-12:d;}
+function melRange(p){let lo=99,hi=0;p.melody.notes.forEach(n=>{lo=Math.min(lo,n.p);hi=Math.max(hi,n.p);});const s=melShift(p);return [lo+s-1,hi+s+1];}
+function melodySVG(p,i){
+  const N=p.melody.notes,s=melShift(p),[lo,hi]=melRange(p);
+  let g='<svg class="staff" viewBox="0 0 100 36" preserveAspectRatio="none" aria-hidden="true">';
+  for(let k=0;k<5;k++){const y=6+k*6;g+=`<line x1="0" x2="100" y1="${y}" y2="${y}" stroke="var(--staff)" stroke-width="1" vector-effect="non-scaling-stroke"/>`;}
+  N.forEach(n=>{const b0=n.b-4*i,b1=b0+n.d;if(b1<=0||b0>=4)return;const x0=Math.max(0,b0)/4*100,x1=Math.min(4,b1)/4*100,y=32-((n.p+s)-lo)/((hi-lo)||1)*28;
+    g+=`<rect x="${(x0+.6).toFixed(1)}" y="${(y-2.2).toFixed(1)}" width="${Math.max(1.5,x1-x0-1.2).toFixed(1)}" height="4.4" rx="1.4" fill="var(--accent)"/>`;});
+  return g+'</svg>';
+}
+function melWeights(p,notes){return barWeights(notes.map(n=>({t:n.b,d:n.d,p:n.p})),0,1,p.len,p.melody?p.melody.key:state.key).W;}
+function markUnsure(cells,W){(cells||[]).forEach((cell,b)=>{const w=W[b];if(!w||!cell.chords.length){cell.unsure=false;return;}const h=w.h,s=h[0].reduce((a,v)=>a+v,0)+h[1].reduce((a,v)=>a+v,0);
+  const f=cell.chords.length>1?(halfFit(cell.chords[0],h[0])+halfFit(cell.chords[1],h[1]))/2:fitScore(cell.chords[0],w);cell.unsure=s>0&&f<.2;});}
+function voice(midi,t,dur,vel){
+  const f=440*Math.pow(2,(midi-69)/12),g=ctx.createGain(),lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=1800;
+  const o1=ctx.createOscillator(),o2=ctx.createOscillator(),g2=ctx.createGain(),lfo=ctx.createOscillator(),lg=ctx.createGain();
+  o1.type='sine';o2.type='triangle';o1.frequency.value=f;o2.frequency.value=f;g2.gain.value=.35;
+  lfo.frequency.value=5.2;lg.gain.setValueAtTime(0,t);lg.gain.linearRampToValueAtTime(f*.004,t+Math.min(.35,dur));lfo.connect(lg);lg.connect(o1.frequency);lg.connect(o2.frequency);
+  o1.connect(g);o2.connect(g2);g2.connect(g);g.connect(lp);lp.connect(master);
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vel*.22,t+.04);g.gain.setValueAtTime(vel*.22,t+Math.max(.05,dur-.06));g.gain.linearRampToValueAtTime(0,t+dur+.05);
+  [o1,o2,lfo].forEach(o=>{o.start(t);o.stop(t+dur+.1);sources.push(o);});
+}
+function melSource(p,ov){ // 回傳可播放的旋律資料
+  if(ov)return ov;if(!p||!p.melody||state.melMode==='off')return null;
+  const a=p.melody.audio&&melAudio[p.melody.audio];
+  const ok=state.melMode!=='synth'&&a&&a.bpm===state.bpm&&a.key===state.key;
+  return {notes:p.melody.notes,shift:melShift(p),aud:ok?{src:a,offset:a.offset+(p.melody.offB||0)*60/a.bpm}:null};
+}
+function audioBufOf(a){if(!a._buf){const b=ctx.createBuffer(1,a.pcm.length,a.sr);b.copyToChannel(a.pcm,0);a._buf=b;}return a._buf;}
+function scheduleMelBar(m,i,t,beat){
+  if(!m)return;
+  if(m.aud){const b=audioBufOf(m.aud.src||m.aud),off=m.aud.offset+4*i*beat;if(off+.01<b.duration&&off>-4*beat){const s=ctx.createBufferSource(),g=ctx.createGain();g.gain.value=1.1;s.buffer=b;s.connect(g);g.connect(ctx.destination);
+    if(off>=0)s.start(t,off,4*beat);else s.start(t-off,0,4*beat+off);sources.push(s);}return;}
+  m.notes.forEach(n=>{const b0=n.b-4*i,b1=b0+n.d;if(b0<0||b0>=4)return;voice(n.p+(m.shift||0),t+b0*beat,Math.min(b1,4.5)*beat-b0*beat,.9);});
+}
+
+/* 錄旋律視窗 */
+let mel={uid:null,phase:'idle',err:'',notes:null,pcm:null,offset:0,backing:true,refit:true,barNow:0,stop:null,src:''};
+function openMel(uid){const p=pOf(uid);mel={uid,phase:'idle',err:'',notes:null,pcm:null,offset:0,backing:!!(cellsOf(p)&&cellsOf(p).some(c=>c.chords.length)),refit:false,barNow:0,stop:null,src:''};
+  document.getElementById('melDlg').hidden=false;document.body.style.overflow='hidden';renderMel();}
+function closeMel(){if(mel.stop)mel.stop(true);stopAll();document.getElementById('melDlg').hidden=true;document.body.style.overflow='';}
+function renderMel(){
+  const p=pOf(mel.uid),pn=document.getElementById('melPn');if(!p){closeMel();return;}
+  const hasCh=!!(cellsOf(p)&&cellsOf(p).some(c=>c.chords.length));
+  let body='';
+  if(mel.phase==='idle'||mel.phase==='err'){
+    body=`<ol class="steps"><li>戴上耳機（有線最準），按「開始錄音」。</li><li>先聽 1 小節預備拍，接著${hasCh?'跟著伴奏和節拍器':'跟著節拍器'}唱或哼 ${p.len} 小節。</li><li>錄完會自動對齊，${hasCh?'並標出跟和弦不太吻合的小節':'並依旋律幫這段配和弦'}。</li></ol>
+      <div class="row"><span class="hint">速度 ${state.bpm} · ${p.len} 小節 · 約 ${Math.round((p.len+1)*4*60/state.bpm)} 秒</span>
+      ${hasCh?`<label class="hint" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="melBack" ${mel.backing?'checked':''}> 播伴奏</label>`:''}</div>
+      <div class="row"><button type="button" class="btn pri" data-act="melgo">● 開始錄音</button></div>
+      ${mel.phase==='err'?`<p class="hint warnt">${esc(mel.err)}</p>`:''}
+      <label class="f" for="melFile">或上傳錄音檔（跟著這段的速度唱，m4a、mp3、wav）<input id="melFile" type="file" accept="audio/*"></label>
+      ${p.melody?`<div class="row"><span class="hint">這段已經有旋律（${p.melody.notes.length} 個音）。</span><button type="button" class="btn sm" data-act="meldel">刪除旋律</button></div>`:''}`;
+  }else if(mel.phase==='count'||mel.phase==='rec'){
+    body=`<div class="recnow"><span class="dot"></span><b id="melStat">${mel.phase==='count'?'預備拍…':`錄音中：第 ${mel.barNow+1} / ${p.len} 小節`}</b></div>
+      <div class="row"><button type="button" class="btn" data-act="melstop">■ 停止</button></div>`;
+  }else if(mel.phase==='busy'){body=`<p class="hint" id="melProg">分析中…</p>`;}
+  else if(mel.phase==='done'){
+    const cells=cellsOf(p),W=melWeights(p,mel.notes),tmp=cells?JSON.parse(JSON.stringify(cells)):null;if(tmp)markUnsure(tmp,W);
+    const uns=tmp?tmp.filter(c=>c.unsure).length:0;
+    body=`<p class="hint">抓到 ${mel.notes.length} 個音${mel.src==='file'?'（上傳的錄音已自動對齊到這段的拍子）':''}${hasCh?` · ${uns?`有 ${uns} 小節旋律跟和弦不太吻合（紅底）`:'旋律跟和弦都吻合'}`:''}</p>
+      <div class="roll"><canvas id="melCanvas" height="150" aria-label="錄到的旋律"></canvas></div>
+      <div class="row"><label class="f" for="melShiftR" style="flex:1;min-width:180px">對齊微調（${Math.round(mel.nudge*1000)} 毫秒）<input id="melShiftR" type="range" min="-250" max="250" step="10" value="${Math.round(mel.nudge*1000)}"></label>
+        <button type="button" class="btn" data-act="melplay">▶ 旋律＋伴奏</button></div>
+      ${hasCh?`<label class="hint" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="melRefit" ${mel.refit?'checked':''}> 存完後依旋律重新配和弦（鎖定的小節不變）</label>`:'<p class="hint">這段還沒有和弦，存完會依旋律自動配和弦。</p>'}
+      <div class="row"><button type="button" class="btn pri" data-act="melsave">存到「${esc(partName(p))}」</button><button type="button" class="btn" data-act="melredo">重錄</button></div>`;
+  }
+  pn.innerHTML=`<div class="sh-top"><div class="t">錄「${esc(partName(p))}」的旋律</div><button type="button" class="btn sm" data-act="melclose">關閉</button></div>${body}`;
+  if(mel.phase==='done')drawMel();
+}
+function curMelNotes(){const beat=60/state.bpm;return mel.notesSec.map(n=>({b:(n.t-mel.start-mel.nudge)/beat,d:n.d/beat,p:n.p})).filter(n=>n.b+n.d>0&&n.b<pOf(mel.uid).len*4);}
+function drawMel(){
+  const cv=document.getElementById('melCanvas');if(!cv)return;const p=pOf(mel.uid),wrap=cv.parentElement,N=mel.notes,bars=p.len;
+  const cssW=Math.max(wrap.clientWidth,bars*90),cssH=150,dpr=window.devicePixelRatio||1;cv.style.width=cssW+'px';cv.style.height=cssH+'px';cv.width=cssW*dpr;cv.height=cssH*dpr;
+  const g=cv.getContext('2d');g.scale(dpr,dpr);const st=getComputedStyle(document.documentElement),col=v=>st.getPropertyValue(v).trim();
+  let lo=99,hi=0;N.forEach(n=>{lo=Math.min(lo,n.p);hi=Math.max(hi,n.p);});if(!N.length){lo=60;hi=72;}lo-=2;hi+=2;
+  const X=b=>b/(bars*4)*cssW,Y=m=>cssH-10-(m-lo)/(hi-lo||1)*(cssH-38);
+  const cells=cellsOf(p),tmp=cells?JSON.parse(JSON.stringify(cells)):null;if(tmp)markUnsure(tmp,melWeights(p,N));
+  if(tmp)tmp.forEach((c,b)=>{if(c.unsure){g.fillStyle=col('--fD');g.globalAlpha=.12;g.fillRect(X(b*4),22,X(4),cssH-22);g.globalAlpha=1;}});
+  for(let mm=lo;mm<=hi;mm++)if([0,2,4,5,7,9,11].includes(mod(mm-state.key))){g.fillStyle=col('--sunk');g.fillRect(0,Y(mm)-2,cssW,4);}
+  for(let b=0;b<=bars*4;b++){const x=X(b);g.strokeStyle=b%4===0?col('--ink'):col('--line');g.lineWidth=b%4===0?1.4:1;g.beginPath();g.moveTo(x,22);g.lineTo(x,cssH);g.stroke();}
+  g.fillStyle=col('--accent');N.forEach(n=>{g.fillRect(X(n.b),Y(n.p)-3,Math.max(2,X(n.d)-1),6);});
+  if(cells){g.fillStyle=col('--ink');g.font='700 14px Kalam, "Noto Sans TC", sans-serif';cells.forEach((c,b)=>c.chords.forEach((ch,j)=>g.fillText(chordName(ch),X(b*4+j*4/c.chords.length)+4,16)));}
+}
+function melClick(t,acc){const o=ctx.createOscillator(),g=ctx.createGain();o.frequency.value=acc?1500:1000;g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(.35,t+.002);g.gain.exponentialRampToValueAtTime(.0001,t+.05);o.connect(g);g.connect(ctx.destination);o.start(t);o.stop(t+.07);sources.push(o);}
+async function melGo(){
+  const p=pOf(mel.uid),c=ac();stopAll();
+  let stream;
+  try{if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error('none');
+    stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});}
+  catch(e){mel.phase='err';mel.err=e&&e.name==='NotAllowedError'?'麥克風被拒絕了。請在瀏覽器的網址列旁開啟麥克風權限後再試一次。':'這裡不能使用麥克風（在 Claude 裡預覽時就會這樣）。請用 GitHub Pages 的網址打開，或改用下方的上傳錄音檔。';renderMel();return;}
+  const src=c.createMediaStreamSource(stream),proc=c.createScriptProcessor(4096,1,1),mute=c.createGain();mute.gain.value=0;
+  const chunks=[];proc.onaudioprocess=e=>{chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));};
+  src.connect(proc);proc.connect(mute);mute.connect(c.destination);
+  const tRef=c.currentTime,beat=60/state.bpm,bar=4*beat,T0=tRef+.5+bar,cells=cellsOf(p);
+  for(let k=0;k<4+p.len*4;k++)melClick(tRef+.5+k*beat,k%4===0);
+  if(mel.backing&&cells)cells.forEach((cell,i)=>{const n=cell.chords.length;cell.chords.forEach((ch,j)=>{const st=T0+i*bar+j*bar/n;playChord(ch,st,bar/n/2,.5,false);playChord(ch,st+bar/n/2,bar/n/2,.38,false);});});
+  mel.phase='count';renderMel();
+  for(let i=0;i<p.len;i++)timers.push(setTimeout(()=>{mel.phase='rec';mel.barNow=i;const s=document.getElementById('melStat');if(s)s.textContent=`錄音中：第 ${i+1} / ${p.len} 小節`;},Math.max(0,(T0+i*bar-c.currentTime)*1000)));
+  let done=false;
+  mel.stop=(cancel)=>{if(done)return;done=true;clearTimeout(mel.endT);try{proc.disconnect();src.disconnect();mute.disconnect();}catch(_){}stream.getTracks().forEach(t=>t.stop());mel.stop=null;stopAll();
+    if(!cancel)melAnalyze(chunks,c.sampleRate,T0-tRef,'mic');};
+  mel.endT=setTimeout(()=>mel.stop&&mel.stop(false),(T0+p.len*bar+beat*.5-c.currentTime)*1000);
+}
+async function toPcm16(buf){const SR=16000,off=new OfflineAudioContext(1,Math.ceil(buf.duration*SR),SR),s=off.createBufferSource();s.buffer=buf;s.connect(off.destination);s.start();const r=await off.startRendering();return r.getChannelData(0);}
+function melScore(p,notesSec,start,beat){
+  const nb=notesSec.map(n=>({t:(n.t-start)/beat,d:n.d/beat,p:n.p}));let grid=0,tot=0,inside=0;
+  nb.forEach(n=>{const w=Math.min(n.d,2),dq=Math.abs(n.t-Math.round(n.t)),de=Math.abs(n.t*2-Math.round(n.t*2))/2;tot+=w;grid+=dq<.1?w*(1-dq*4):de<.08?w*.35:0;if(n.t>=-.25&&n.t<p.len*4)inside+=w;});
+  const W=barWeights(nb,0,1,p.len,state.key).W,cells=cellsOf(p),C=FITCANDS();let fs=0;
+  W.forEach((w,i)=>{if(cells&&cells[i]&&cells[i].chords.length)fs+=fitScore(cells[i].chords[0],w);else{let m=-9;C.forEach(c=>{const v=fitScore(c,w);if(v>m)m=v;});fs+=m;}});
+  return (tot?grid/tot:0)+.5*fs/p.len+.6*(tot?inside/tot:0);
+}
+async function melAnalyze(chunks,sr,t0est,how){
+  const p=pOf(mel.uid);mel.phase='busy';renderMel();
+  try{
+    let buf;
+    if(how==='mic'){const len=chunks.reduce((a,c)=>a+c.length,0),all=new Float32Array(len);let o=0;chunks.forEach(c=>{all.set(c,o);o+=c.length;});buf=ctx.createBuffer(1,len,sr);buf.copyToChannel(all,0);}
+    else buf=chunks;
+    const pcm=await toPcm16(buf);
+    const P=await yin(pcm,16000,f=>{const el=document.getElementById('melProg');if(el)el.textContent=`分析中… ${Math.round(f*100)}%`;});
+    const {notes}=notesFrom(P);
+    if(!notes.length){mel.phase='err';mel.err='沒有錄到清楚的旋律。請靠近麥克風、用「啦」或「嘟」清楚地唱，再試一次。';renderMel();return;}
+    const beat=60/state.bpm;let best=null;
+    if(how==="mic"){for(let s=-.7;s<=.50001;s+=.01){const sc=melScore(p,notes,t0est+s,beat)-Math.abs(s)*.9;if(!best||sc>best.sc)best={sc,start:t0est+s};}}
+    else{for(let off=-3.5;off<=3.5;off+=.25){const st=notes[0].t+off*beat,sc=melScore(p,notes,st,beat)+(off===0?.05:0);if(!best||sc>best.sc)best={sc,start:st};}
+      const b0=best.start;for(let s=-.12;s<=.12001;s+=.01){const sc=melScore(p,notes,b0+s,beat);if(sc>best.sc)best={sc,start:b0+s};}}
+    mel.notesSec=notes;mel.start=best.start;mel.nudge=0;mel.pcm=pcm;mel.src=how;mel.notes=curMelNotes();
+    mel.refit=!(cellsOf(p)&&cellsOf(p).some(c=>c.chords.length))||mel.refit;mel.phase='done';renderMel();
+  }catch(e){mel.phase='err';mel.err='分析失敗，請再錄一次或換一個檔案。';renderMel();}
+}
+async function onMelFile(file){if(!file)return;const c=ac();mel.phase='busy';renderMel();
+  try{const buf=await c.decodeAudioData(await file.arrayBuffer());if(buf.duration>125)throw new Error('long');melAnalyze(buf,buf.sampleRate,0,'file');}
+  catch(e){mel.phase='err';mel.err=e&&e.message==='long'?'錄音超過 2 分鐘，請剪短一點。':'這個檔案讀不出來，請換成 m4a、mp3 或 wav。';renderMel();}}
+function melPreview(){const p=pOf(mel.uid),cells=cellsOf(p)||Array.from({length:p.len},()=>({chords:[]}));
+  const ov={notes:mel.notes,shift:0,aud:{pcm:mel.pcm,sr:16000,offset:mel.start+mel.nudge,bpm:state.bpm,key:state.key}};
+  playCells(cells.map((cell,i)=>({uid:p.uid,i,cell,mel:ov})));}
+function melSave(){
+  const p=pOf(mel.uid),id=newUid(),a={pcm:mel.pcm,sr:16000,offset:mel.start+mel.nudge,bpm:state.bpm,key:state.key};
+  melAudio[id]=a;idb.put(id,{pcm:a.pcm,sr:a.sr,offset:a.offset,bpm:a.bpm,key:a.key});
+  p.melody={notes:mel.notes,key:state.key,audio:id};p.fit=melWeights(p,mel.notes);
+  const hasCh=!!(cellsOf(p)&&cellsOf(p).some(c=>c.chords.length));
+  if(!hasCh||mel.refit)genPart(p.uid,true);else (p.options||[]).forEach(o=>markUnsure(o,p.fit));
+  closeMel();renderScore();save();toast(!hasCh?'旋律已存好，並依旋律配好和弦':mel.refit?'旋律已存好，和弦已依旋律重新配過':'旋律已存好，譜上的音符就是你唱的旋律');
+}
+async function loadMelAudio(){for(const p of state.parts){if(p.melody&&p.melody.audio&&!melAudio[p.melody.audio]){const v=await idb.get(p.melody.audio);if(v)melAudio[p.melody.audio]=v;}}}
+
 /* ---------- 開始 ---------- */
-load();renderAddBtns();renderAll();
+load();renderAddBtns();renderAll();loadMelAudio();
 </script>
 </body>
 </html>
