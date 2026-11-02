@@ -96,6 +96,16 @@ input.lyin:focus{outline:none;border-bottom-color:var(--accent);background:var(-
 .junc.bad{border-left-color:var(--fD);background:color-mix(in srgb,var(--fD) 9%,transparent)}
 .junc.bad .jv{color:var(--fD)}
 .junc .sp{flex:1}
+.toptabs{display:flex;background:var(--sunk);border-radius:10px;padding:3px;gap:3px}
+.toptabs button{flex:1;border:0;background:none;border-radius:8px;padding:7px 0;font-weight:700;color:var(--muted)}
+.toptabs button.on{background:var(--paper);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.meled{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--paper)}
+.meled svg{display:block;width:100%;height:auto;touch-action:none;-webkit-user-select:none;user-select:none;cursor:crosshair}
+.edn .body{fill:var(--accent);opacity:.85;cursor:grab}
+.edn .hdl{fill:var(--ink);opacity:.25;cursor:ew-resize}
+.edn.sel .body{opacity:1;stroke:var(--ink);stroke-width:1.5}
+.edn.sel .hdl{opacity:.6}
+.edtools .ib{min-width:34px}
 .mix{display:flex;gap:6px 16px;flex-wrap:wrap;margin:-2px 0 10px;font-size:12px;color:var(--muted)}
 .mix label{display:flex;align-items:center;gap:6px}
 .mix input{width:110px}
@@ -723,7 +733,7 @@ function updateNow(){if(playing)return;const bars=state.parts.reduce((a,p)=>a+p.
 function renderAll(){renderSettings();renderMood();renderScore();save();}
 
 /* ---------- 小節詳情 ---------- */
-let sh={uid:null,i:0,tab:'pick',feel:'pain',pr:0,pq:'maj'},cands=[];
+let sh={uid:null,i:0,tab:'pick',top:'chord',feel:'pain',pr:0,pq:'maj',sel:-1},cands=[];
 function neighbors(uid,i){const idx=pIdx(uid),cells=cellsOf(state.parts[idx]);const p=cells[i-1],n=cells[i+1];
   return {P:p?p.chords[p.chords.length-1]:prevChordBefore(idx),N:n?n.chords[0]:nextChordAfter(idx),pc:p,nc:n};}
 function mk(label,chords,desc,diff,extra){return Object.assign({label,chords,desc,diff},extra||{});}
@@ -844,8 +854,11 @@ function renderSheet(){
   if(sh.tab!=='pick')body+=`<div class="cands">${cands.length?cands.map((c,k)=>`<div class="cand"><div class="m"><div class="nm">${esc(c.label)}<small>${esc(c.chords.map(romanOf).join(' → '))}</small></div><p>${esc(c.desc)}</p>${dots(c.diff)}</div>
     <div class="a"><button type="button" class="btn sm" data-act="cone" data-k="${k}" aria-label="只聽 ${esc(c.label)}">▶ 單聽</button><button type="button" class="btn sm" data-act="cprev" data-k="${k}" aria-label="含前後小節試聽 ${esc(c.label)}">▶ 含前後</button><button type="button" class="btn sm pri" data-act="capply" data-k="${k}">套用</button></div></div>`).join('')
     :(sh.tab==='easy'?'':`<div class="empty">這個和弦目前沒有適合的替代選項。</div>`)}</div>`;
+  const topTabs=`<div class="toptabs" role="tablist"><button type="button" role="tab" class="${sh.top!=='mel'?'on':''}" data-act="top" data-t="chord" aria-selected="${sh.top!=='mel'}">和弦</button><button type="button" role="tab" class="${sh.top==='mel'?'on':''}" data-act="top" data-t="mel" aria-selected="${sh.top==='mel'}">旋律${p.melody?' ♪':''}</button></div>`;
+  const shTop=`<div class="sh-top"><div class="t">${markOf(pIdx(uid))} ${esc(partName(p))} · 第 ${i+1} 小節</div><button type="button" class="btn sm" data-act="close">關閉</button></div>`;
+  if(sh.top==='mel'){document.getElementById('sheetPn').innerHTML=shTop+topTabs+melTabHTML(p,i);return;}
   document.getElementById('sheetPn').innerHTML=`
-    <div class="sh-top"><div class="t">${markOf(pIdx(uid))} ${esc(partName(p))} · 第 ${i+1} 小節</div><button type="button" class="btn sm" data-act="close">關閉</button></div>
+    ${shTop}${topTabs}
     <div class="sh-chords">${head}</div>
     ${empty?'':`<div class="row"><button type="button" class="btn" data-act="playone">▶ 只聽這小節</button><button type="button" class="btn" data-act="playcell">▶ 含前後小節</button>
       <button type="button" class="btn${cell.locked?' pri':''}" data-act="lock" aria-pressed="${cell.locked}">${cell.locked?'已鎖定':'鎖定這小節'}</button></div>`}
@@ -858,6 +871,7 @@ function openSheet(uid,i){
   if(!cellsOf(part)){part.options=[Array.from({length:part.len},(_,k)=>({chords:[],locked:false,lyric:(part.lyrics||[])[k]||''}))];part.pick=0;delete part.lyrics;}
   const cur0=cellsOf(part)[+i].chords[0];sh.pr=cur0?cur0.r:0;sh.pq=cur0?cur0.q:'maj';
   if(!cur0)sh.tab='pick';
+  if(sh.uid!==uid||sh.i!==+i)sh.sel=-1;
   sh.uid=uid;sh.i=+i;sh.at=Date.now();renderSheet();const s=document.getElementById('sheet');s.hidden=false;document.body.style.overflow='hidden';
   setTimeout(()=>{const b=s.querySelector('.btn[data-act=close]');if(b)b.focus();},30);}
 function closeSheet(){document.getElementById('sheet').hidden=true;document.body.style.overflow='';const el=document.getElementById(`m-${sh.uid}-${sh.i}`);if(el)el.focus();}
@@ -906,6 +920,15 @@ document.addEventListener('click',e=>{
   else if(act==='playpart'){if(playing){stopAll();return;}const p=pOf(u);playCells(cellsOf(p).map((cell,i)=>({uid:u,i,cell,label:partName(p)})));}
   else if(act==='moodDemo'){const m=MOODS.find(x=>x.id===state.mood);playSeq(m.ex.concat([m.ex[0]]).map(id=>inst(id)));}
   else if(act==='tab'){sh.tab=a.dataset.t;renderSheet();}
+  else if(act==='top'){sh.top=a.dataset.t;renderSheet();}
+  else if(act==='edmove')edNudge(+a.dataset.db||0,+a.dataset.dp||0,+a.dataset.dd||0);
+  else if(act==='eddel')edDelete();
+  else if(act==='edadd')edAdd();
+  else if(act==='edblank'){const p=pOf(sh.uid);p.melody={notes:[],key:state.key,audio:null,edited:true};renderScore();save();renderSheet();}
+  else if(act==='edrec'){closeSheet();openMel(sh.uid);}
+  else if(act==='edrestore'){const p=pOf(sh.uid);if(p.melody.orig){p.melody.notes=p.melody.orig;delete p.melody.orig;p.melody.edited=false;edCommit(p);toast('已還原成原本錄的旋律');}}
+  else if(act==='edplay'){const p=pOf(sh.uid),c=cellsOf(p);playCells([{uid:p.uid,i:sh.i,cell:c[sh.i]}]);}
+  else if(act==='edplayctx'){const p=pOf(sh.uid),c=cellsOf(p),l=[];for(let k=Math.max(0,sh.i-1);k<=Math.min(c.length-1,sh.i+1);k++)l.push({uid:p.uid,i:k,cell:c[k]});playCells(l);}
   else if(act==='feel'){sh.feel=a.dataset.f;renderSheet();}
   else if(act==='cprev')previewCand(cands[+a.dataset.k]);
   else if(act==='cone')playSeq(cands[+a.dataset.k].chords);
@@ -1279,9 +1302,9 @@ function notesFrom(P){
   return {notes,tune:off};
 }
 function melShift(p){if(!p.melody)return 0;const d=mod(state.key-p.melody.key);return d>6?d-12:d;}
-function melRange(p){let lo=99,hi=0;p.melody.notes.forEach(n=>{lo=Math.min(lo,n.p);hi=Math.max(hi,n.p);});const s=melShift(p);return [lo+s-1,hi+s+1];}
+function melRange(p){let lo=99,hi=0;if(!p.melody.notes.length)return [59,73];melNotes(p).forEach(n=>{lo=Math.min(lo,n.p);hi=Math.max(hi,n.p);});const s=melShift(p);return [lo+s-1,hi+s+1];}
 function melodySVG(p,i){
-  const N=quantNotes(p.melody.notes),s=melShift(p),[lo,hi]=melRange(p);
+  const N=melNotes(p),s=melShift(p),[lo,hi]=melRange(p);
   let g='<svg class="staff" viewBox="0 0 100 36" preserveAspectRatio="none" aria-hidden="true">';
   for(let k=0;k<5;k++){const y=6+k*6;g+=`<line x1="0" x2="100" y1="${y}" y2="${y}" stroke="var(--staff)" stroke-width="1" vector-effect="non-scaling-stroke"/>`;}
   N.forEach(n=>{const b0=n.b-4*i,b1=b0+n.d;if(b1<=0||b0>=4)return;const x0=Math.max(0,b0)/4*100,x1=Math.min(4,b1)/4*100,y=32-((n.p+s)-lo)/((hi-lo)||1)*28;
@@ -1303,8 +1326,8 @@ function voice(midi,t,dur,vel){
 function melSource(p,ov){ // 回傳可播放的旋律資料
   if(ov)return ov;if(!p||!p.melody||state.melMode==='off')return null;
   const a=p.melody.audio&&melAudio[p.melody.audio];
-  const ok=state.melMode!=='inst'&&a&&a.bpm===state.bpm&&a.key===state.key;
-  return {notes:quantNotes(p.melody.notes),shift:melShift(p),aud:ok?{src:a,offset:a.offset+(p.melody.offB||0)*60/a.bpm}:null};
+  const ok=state.melMode!=='inst'&&!p.melody.edited&&a&&a.bpm===state.bpm&&a.key===state.key;
+  return {notes:melNotes(p),shift:melShift(p),aud:ok?{src:a,offset:a.offset+(p.melody.offB||0)*60/a.bpm}:null};
 }
 function normGain(pcm){let peak=0,ss=0,n=0;for(let i=0;i<pcm.length;i++){const v=Math.abs(pcm[i]);if(v>peak)peak=v;if(v>.004){ss+=v*v;n++;}}const rms=n?Math.sqrt(ss/n):0;return rms?Math.min(.12/rms,.95/(peak||1),25):1;}
 function audioBufOf(a){if(!a._buf){const g=normGain(a.pcm),d=new Float32Array(a.pcm.length);for(let i=0;i<d.length;i++)d[i]=a.pcm[i]*g;const b=ctx.createBuffer(1,d.length,a.sr);b.copyToChannel(d,0);a._buf=b;}return a._buf;}
@@ -1438,6 +1461,83 @@ function melSave(){
   closeMel();renderScore();save();toast(!hasCh?'旋律已存好，並依旋律配好和弦':mel.refit?'旋律已存好，和弦已依旋律重新配過':'旋律已存好，譜上的音符就是你唱的旋律');
 }
 async function loadMelAudio(){for(const p of state.parts){if(p.melody&&p.melody.audio&&!melAudio[p.melody.audio]){const v=await idb.get(p.melody.audio);if(v)melAudio[p.melody.audio]=v;}}}
+
+
+/* ---------- 旋律編輯器（小節詳情的「旋律」分頁） ---------- */
+const NAMES_S=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'],NAMES_F=['C','D♭','D','E♭','E','F','G♭','G','A♭','A','B♭','B'];
+const noteLabel=m=>(FLATKEYS.has(state.key)?NAMES_F:NAMES_S)[mod(m)]+(Math.floor(m/12)-1);
+function melNotes(p){return p.melody.edited?p.melody.notes:quantNotes(p.melody.notes);}
+function ensureEditable(p){if(!p.melody.edited){p.melody.orig=p.melody.notes;p.melody.notes=quantNotes(p.melody.notes).map(n=>({b:n.b,d:n.d,p:n.p}));p.melody.edited=true;}}
+const ED={W:400,G:40,RH:22};
+function edGeom(p,i){
+  const N=melNotes(p),s=melShift(p),inBar=N.filter(n=>n.b<4*i+4&&n.b+n.d>4*i);
+  let src=inBar.length?inBar:N,lo=99,hi=0;src.forEach(n=>{lo=Math.min(lo,n.p+s);hi=Math.max(hi,n.p+s);});
+  if(!src.length){lo=60+mod(state.key);hi=lo+12;}lo-=3;hi+=3;if(hi-lo<12){const m=(hi+lo)>>1;lo=m-6;hi=m+6;}
+  if(sh.edRange&&sh.edRange.uid===p.uid&&sh.edRange.i===i){lo=Math.min(lo,sh.edRange.lo);hi=Math.max(hi,sh.edRange.hi);}
+  sh.edRange={uid:p.uid,i,lo,hi};
+  return {lo,hi,rows:hi-lo+1,gw:ED.W-ED.G,s};
+}
+function edNoteRect(n,k,g,i){
+  const x=ED.G+(n.b-4*i)/4*g.gw,w=Math.max(6,n.d/4*g.gw-1.5),y=(g.hi-(n.p+g.s))*ED.RH+2,sel=k===sh.sel;
+  return `<g data-n="${k}" class="edn${sel?' sel':''}"><rect class="body" x="${x.toFixed(1)}" y="${y}" width="${w.toFixed(1)}" height="${ED.RH-4}" rx="4"/><rect class="hdl" data-h="1" x="${(x+w-9).toFixed(1)}" y="${y}" width="9" height="${ED.RH-4}" rx="3"/></g>`;
+}
+function melEditorSVG(p,i){
+  const g=edGeom(p,i),N=melNotes(p),H=g.rows*ED.RH,dia=[0,2,4,5,7,9,11];
+  let s=`<svg id="melEd" viewBox="0 0 ${ED.W} ${H}" data-lo="${g.lo}" data-hi="${g.hi}" role="application" aria-label="旋律編輯器：拖曳音符調整音高與位置，拖曳右端調整長度，點空白處新增音符">`;
+  for(let m=g.hi;m>=g.lo;m--){const y=(g.hi-m)*ED.RH,inKey=dia.includes(mod(m-state.key));
+    s+=`<rect x="${ED.G}" y="${y}" width="${g.gw}" height="${ED.RH}" fill="${inKey?'var(--sunk)':'var(--paper)'}"/>`;
+    s+=`<text x="${ED.G-5}" y="${y+ED.RH*.68}" text-anchor="end" font-size="10.5" fill="${inKey?'var(--ink)':'var(--muted)'}" font-family="JetBrains Mono,monospace">${noteLabel(m)}</text>`;}
+  for(let q=0;q<=16;q++){const x=ED.G+q/16*g.gw;s+=`<line x1="${x}" x2="${x}" y1="0" y2="${H}" stroke="${q%4===0?'var(--line-strong)':'var(--line)'}" stroke-width="${q%4===0?1.2:.6}"/>`;}
+  N.forEach((n,k)=>{if(k!==sh.sel&&n.b<4*i+4&&n.b+n.d>4*i)s+=edNoteRect(n,k,g,i);});
+  const sn=N[sh.sel];if(sn&&sn.b<4*i+4&&sn.b+sn.d>4*i)s+=edNoteRect(sn,sh.sel,g,i);
+  return s+'</svg>';
+}
+function melTabHTML(p,i){
+  if(!p.melody)return `<p class="hint">這段還沒有旋律。可以先錄一段，或從空白開始一個一個放音符。</p>
+    <div class="row"><button type="button" class="btn pri" data-act="edrec">🎤 錄這段的旋律</button><button type="button" class="btn" data-act="edblank">從空白開始</button></div>`;
+  const N=melNotes(p),n=N[sh.sel],inBar=n&&n.b<4*i+4&&n.b+n.d>4*i;
+  const hasAud=p.melody.audio&&melAudio[p.melody.audio];
+  return `<p class="hint">拖曳音符：上下改音高、左右改位置；拖右端改長度；點空白處新增一個音。格線是十六分音符。</p>
+    <div class="meled">${melEditorSVG(p,i)}</div>
+    <div class="row edtools">${inBar?`<span class="hint">選取：<b>${noteLabel(n.p+melShift(p))}</b> · 第 ${(n.b-4*i+1).toFixed(2).replace(/\.?0+$/,'')} 拍 · ${n.d} 拍</span>
+      <button type="button" class="ib" data-act="edmove" data-dp="1" aria-label="升半音">▲</button><button type="button" class="ib" data-act="edmove" data-dp="-1" aria-label="降半音">▼</button>
+      <button type="button" class="ib" data-act="edmove" data-db="-0.25" aria-label="往前">◀</button><button type="button" class="ib" data-act="edmove" data-db="0.25" aria-label="往後">▶</button>
+      <button type="button" class="ib" data-act="edmove" data-dd="-0.25" aria-label="縮短">短</button><button type="button" class="ib" data-act="edmove" data-dd="0.25" aria-label="加長">長</button>
+      <button type="button" class="ib warn" data-act="eddel">刪除</button>`:`<span class="hint">點一個音符可以選取它，用按鈕微調。</span><button type="button" class="ib" data-act="edadd">＋ 新增音</button>`}</div>
+    <div class="row"><button type="button" class="btn" data-act="edplay">▶ 播放這小節</button><button type="button" class="btn" data-act="edplayctx">▶ 含前後小節</button>
+      ${p.melody.orig?'<button type="button" class="btn sm" data-act="edrestore">還原成原本錄的旋律</button>':''}</div>
+    ${p.melody.edited&&hasAud?'<p class="hint">這段旋律編輯過了，播放時會用樂器單音（原始錄音不會跟著改）。</p>':''}`;
+}
+function edSound(m){const c=ac();const t=c.currentTime+.01;if(state.inst==='guitar')pluck(m,t,.9,.35);else tone(m,t,.35,1);}
+function edCommit(p){p.fit=melWeights(p,melNotes(p));(p.options||[]).forEach(o=>markUnsure(o,p.fit));renderScore();save();renderSheet();}
+function edNudge(db,dp,dd){const p=pOf(sh.uid);ensureEditable(p);const n=p.melody.notes[sh.sel];if(!n)return;const i=sh.i;
+  n.b=clamp(n.b+db,4*i,4*i+4-.25);n.p=n.p+dp;n.d=clamp(n.d+dd,.25,8);if(dp)edSound(n.p+melShift(p));edCommit(p);}
+function edDelete(){const p=pOf(sh.uid);ensureEditable(p);p.melody.notes.splice(sh.sel,1);sh.sel=-1;edCommit(p);}
+function edAdd(){const p=pOf(sh.uid);ensureEditable(p);const i=sh.i,N=p.melody.notes,inBar=N.filter(n=>n.b>=4*i&&n.b<4*i+4);
+  const last=inBar.sort((a,b)=>a.b-b.b).slice(-1)[0],b=last?Math.min(4*i+3.75,last.b+last.d):4*i,pt=last?last.p:60+mod(state.key)-melShift(p);
+  N.push({b,d:1,p:pt});N.sort((x,y)=>x.b-y.b);sh.sel=N.findIndex(n=>n.b===b&&n.p===pt);edSound(pt+melShift(p));edCommit(p);}
+let edDrag=null;
+function edPt(e,svg){const r=svg.getBoundingClientRect(),k=ED.W/r.width;return {x:(e.clientX-r.left)*k,y:(e.clientY-r.top)*k};}
+document.addEventListener('pointerdown',e=>{
+  const svg=e.target.closest&&e.target.closest('#melEd');if(!svg)return;e.preventDefault();
+  const p=pOf(sh.uid),i=sh.i,lo=+svg.dataset.lo,hi=+svg.dataset.hi,pt=edPt(e,svg),gw=ED.W-ED.G,s=melShift(p);
+  const gEl=e.target.closest('[data-n]');
+  if(gEl){ensureEditable(p);const k=+gEl.dataset.n,n=p.melody.notes[k];sh.sel=k;
+    edDrag={k,mode:e.target.dataset.h?'len':'move',x0:pt.x,y0:pt.y,o:{b:n.b,d:n.d,p:n.p},lo,hi,gw,lastP:n.p};
+    svg.querySelectorAll('.edn').forEach(x=>x.classList.toggle('sel',x===gEl));try{svg.setPointerCapture(e.pointerId);}catch(_){}edSound(n.p+s);return;}
+  if(pt.x<ED.G)return;
+  ensureEditable(p);const b=clamp(4*i+Math.floor((pt.x-ED.G)/gw*16)/4,4*i,4*i+3.75),m=hi-Math.floor(pt.y/ED.RH)-s;
+  p.melody.notes.push({b,d:1,p:m});p.melody.notes.sort((x,y)=>x.b-y.b);sh.sel=p.melody.notes.findIndex(n=>n.b===b&&n.p===m);edSound(m+s);edCommit(p);
+});
+document.addEventListener('pointermove',e=>{
+  if(!edDrag)return;const svg=document.getElementById('melEd');if(!svg)return;e.preventDefault();
+  const p=pOf(sh.uid),i=sh.i,n=p.melody.notes[edDrag.k],pt=edPt(e,svg),db=Math.round((pt.x-edDrag.x0)/edDrag.gw*16)/4,dp=-Math.round((pt.y-edDrag.y0)/ED.RH),s=melShift(p);
+  if(edDrag.mode==='move'){n.b=clamp(edDrag.o.b+db,4*i,4*i+4-.25);n.p=clamp(edDrag.o.p+dp,edDrag.lo-s,edDrag.hi-s);}
+  else n.d=clamp(edDrag.o.d+db,.25,4*i+8-n.b);
+  if(n.p!==edDrag.lastP){edDrag.lastP=n.p;edSound(n.p+s);}
+  const gEl=svg.querySelector(`[data-n="${edDrag.k}"]`);if(gEl)gEl.outerHTML=edNoteRect(n,edDrag.k,{lo:edDrag.lo,hi:edDrag.hi,gw:edDrag.gw,s},i);
+});
+document.addEventListener('pointerup',()=>{if(!edDrag)return;const p=pOf(sh.uid);edDrag=null;p.melody.notes.forEach((n,k)=>n._k=k);const selN=p.melody.notes[sh.sel];p.melody.notes.sort((x,y)=>x.b-y.b);sh.sel=p.melody.notes.indexOf(selN);p.melody.notes.forEach(n=>delete n._k);edCommit(p);});
 
 /* ---------- 開始 ---------- */
 load();if(state.melMode==='synth')state.melMode='inst';renderAddBtns();renderAll();loadMelAudio();
