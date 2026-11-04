@@ -120,6 +120,16 @@ input.lyin:focus{outline:none;border-bottom-color:var(--accent);background:var(-
 .pcell{height:30px;border:1px solid var(--line);background:var(--paper);border-radius:5px;padding:0}
 .pcell:nth-of-type(odd){background:var(--sunk)}
 .pcell.on{background:var(--accent);border-color:var(--accent)}
+.step{border:1px solid var(--accent);border-radius:10px;padding:10px 12px;margin-top:12px;display:flex;flex-direction:column;gap:8px;background:color-mix(in srgb,var(--accent) 5%,var(--paper))}
+.step.muted{border:1px dashed var(--line-strong);background:none}
+.step.done{border-color:var(--line);background:var(--sunk)}
+.step .sh{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.step .sum{margin:0;font-size:14px;line-height:1.6}.step .seq{margin:0;font-family:var(--font-c);font-size:17px}
+.scand{display:grid;grid-template-columns:64px minmax(0,1fr);grid-template-areas:"nm why" "nm a";gap:4px 10px;border:1px solid var(--line);border-left:4px solid var(--fc);border-radius:8px;padding:8px 10px;background:var(--paper)}
+.sc-nm{grid-area:nm;font-family:var(--font-c);font-size:24px;line-height:1.1}.sc-nm small{display:block;font-family:var(--font-m);font-size:11px;color:var(--muted)}
+.sc-why{grid-area:why;font-size:13px;line-height:1.55;color:var(--ink)}.sc-a{grid-area:a;display:flex;gap:6px;justify-content:flex-end}
+.why{font-size:12.5px;line-height:1.55;color:var(--ink);background:var(--sunk);border-radius:6px;padding:6px 8px;max-width:340px}
+.meas.target{background:color-mix(in srgb,var(--accent) 12%,transparent);box-shadow:inset 0 -3px 0 var(--accent)}
 .mix{display:flex;gap:6px 16px;flex-wrap:wrap;margin:-2px 0 10px;font-size:12px;color:var(--muted)}
 .mix label{display:flex;align-items:center;gap:6px}
 .mix input{width:110px}
@@ -503,26 +513,34 @@ function prevChordBefore(idx){for(let j=idx-1;j>=0;j--){const c=cellsOf(state.pa
 function nextChordAfter(idx){for(let j=idx+1;j<state.parts.length;j++){const c=cellsOf(state.parts[j]);if(c)return c[0].chords[0]||null;}return null;}
 function firstLibOfType(type,exclude){const p=state.parts.find(x=>x.type===type&&x.uid!==exclude&&cellsOf(x)&&cellsOf(x)[0].chords[0]);return p?cellsOf(p)[0].chords[0].lib||null:null;}
 function genPart(uid,keepLocks){
-  const idx=pIdx(uid),part=state.parts[idx];const moodId=part.mood||state.mood||(part.fit?'':null);if(moodId===null)return;
+  const idx=pIdx(uid),part=state.parts[idx];const moodId=part.mood||state.mood;if(!moodId)return;
   const base=SECMAP[part.type],sec=Object.assign({},base,{len:part.len});
   const old=cellsOf(part);
   const locked=Array.from({length:sec.len},(_,i)=>keepLocks&&old&&old[i]&&old[i].locked?JSON.parse(JSON.stringify(old[i])):null);
   const mood=MOODS.find(m=>m.id===moodId)||{start:['I'],boost:[],reduce:[]};
-  let start=base.start||['I'];
+  let start=startSet(part,mood);
+  const w=weightFn(moodId,part.mood?'':state.sub);
+  const runs=[];for(let k=0;k<3;k++){const b=beam(sec,{w,start,prevEnd:prevChordBefore(idx),nextStart:nextChordAfter(idx),locked,temp:1.3});if(b)runs.push(...b.slice(0,8));}
+  runs.sort((a,b)=>b.score-a.score);
+  const picks=diverse(runs,3);
+  const lyrics=old?old.map(c=>c.lyric):(part.lyrics||[]);delete part.lyrics;
+  part.options=picks.map(p=>p.path.map((c,i)=>({chords:JSON.parse(JSON.stringify(c.chords)),locked:!!c.locked,lyric:lyrics[i]||''})));
+  part.pick=0;
+}
+function startSet(part,mood){
+  const uid=part.uid;let start=SECMAP[part.type].start||['I'];
   if(part.type==='verse')start=mood.start.concat(['I','vi']).filter((x,i,a)=>a.indexOf(x)===i).slice(0,2);
   if(part.type==='intro'){start=[firstLibOfType('verse',uid),firstLibOfType('chorus',uid)].filter(Boolean);if(!start.length)start=mood.start.concat(['I']).filter((x,i,a)=>a.indexOf(x)===i);}
   if(part.type==='chorus'){const vf=firstLibOfType('verse',uid);const f=start.filter(x=>x!==vf);if(f.length)start=f;}
   if(part.type==='bridge'){const used=new Set();state.parts.forEach(p=>{if((p.type==='verse'||p.type==='chorus')&&cellsOf(p))cellsOf(p).forEach(c=>c.chords.forEach(ch=>used.add(ch.lib)));});
     start=['vi','ii','iii','iv','bVI','bVII','IV'].filter(x=>!used.has(x));if(!start.length)start=['vi','ii'];}
-  if(part.fit){const any=Object.keys(LIB).filter(id=>LIB[id].type!=='sec');start=any;sec.end=any;}
-  const w=weightFn(moodId,part.mood?'':state.sub);
-  const runs=[];for(let k=0;k<3;k++){const b=beam(sec,{w,start,prevEnd:prevChordBefore(idx),nextStart:nextChordAfter(idx),locked,temp:part.fit?(k===0?0:.5):1.3,fit:part.fit});if(b)runs.push(...b.slice(0,8));}
-  runs.sort(part.fit?(a,b)=>b.clean-a.clean:(a,b)=>b.score-a.score);
-  const picks=diverse(runs,3);
-  const lyrics=old?old.map(c=>c.lyric):(part.lyrics||[]);delete part.lyrics;
-  part.options=picks.map(p=>p.path.map((c,i)=>({chords:JSON.parse(JSON.stringify(c.chords)),locked:!!c.locked,lyric:lyrics[i]||''})));
-  if(part.fit)part.options.forEach(o=>refineFit(o,part.fit,prevChordBefore(idx),nextChordAfter(idx)));
-  part.pick=0;
+  return start;
+}
+function ensureCells(p){if(!cellsOf(p)){p.options=[Array.from({length:p.len},(_,k)=>({chords:[],locked:false,lyric:(p.lyrics||[])[k]||''}))];p.pick=0;delete p.lyrics;}return cellsOf(p);}
+function genFill(uid){ // 自動產生：只補還沒選的小節，已選的不動
+  const p=pOf(uid),cells=ensureCells(p),lk=cells.map(c=>c.locked);
+  cells.forEach(c=>{if(c.chords.length)c.locked=true;});genPart(uid,true);
+  (p.options||[]).forEach(o=>o.forEach((c,i)=>{c.locked=!!lk[i];}));
 }
 function copyFrom(src,dst){
   const lyr=cellsOf(dst)?cellsOf(dst).map(c=>c.lyric):(dst.lyrics||[]);delete dst.lyrics;
@@ -665,7 +683,7 @@ function staffSVG(n,empty){
   return s+'</svg>';
 }
 function measHTML(p,i,cell,len){
-  const cls=['meas'];if(i%4===0)cls.push('first');if(i===len-1)cls.push('end');
+  const cls=['meas'];if(i%4===0)cls.push('first');if(i===len-1)cls.push('end');if(p.uid===state.activeUid&&(p.mood||state.mood)&&i===firstEmpty(p))cls.push('target');
   const ly=cell?cell.lyric:((p.lyrics&&p.lyrics[i])||'');
   let inner,label;
   if(!cell||!cell.chords.length){cls.push('blank');inner=`<div class="chd"><span class="one"><span class="nm">—</span></span></div>${p.melody&&p.melody.notes.length?melodySVG(p,i):staffSVG(1,true)}`;label=`第 ${i+1} 小節，還沒有和弦。長按可以自選和弦`;}
@@ -674,7 +692,7 @@ function measHTML(p,i,cell,len){
     const big=state.showDiag?(two?30:38):0;
     const chd=cell.chords.map(c=>`<span class="one"><span><span class="nm f-${fn(c)}${kindOf(c)==='bor'?' bor':''}">${esc(chordName(c))}</span><br><span class="rm">${esc(romanOf(c))}</span></span>${big?`<span class="dg">${diagram(curV(c),big,false)}</span>`:''}</span>`).join('');
     const cap=state.capo?`<div class="cap">實際 ${cell.chords.map(c=>esc(chordName(c,true))).join(' ')}</div>`:'';
-    inner=`${cell.locked?LOCK:''}${cell.unsure?'<span class="unsure" title="旋律跟這個和弦不太吻合">?</span>':''}<div class="chd">${chd}</div>${cap}${p.melody&&p.melody.notes.length?melodySVG(p,i):staffSVG(cell.chords.length,false)}`;
+    inner=`${cell.locked?LOCK:''}${isUnsure(p,i,cell)?'<span class="unsure" title="旋律跟這個和弦不太吻合">?</span>':''}<div class="chd">${chd}</div>${cap}${p.melody&&p.melody.notes.length?melodySVG(p,i):staffSVG(cell.chords.length,false)}`;
     label=`第 ${i+1} 小節 ${cell.chords.map(c=>chordName(c)).join('、')}。按一下試聽，長按打開詳情`;
   }
   return `<div class="${cls.join(' ')}" id="m-${p.uid}-${i}">
@@ -697,9 +715,8 @@ function partHTML(p,idx){
       <select data-act="len" data-u="${p.uid}" aria-label="小節數">${lenOpts}</select>
       <select data-act="pmood" data-u="${p.uid}" aria-label="這段的情緒">${moodOpts}</select></div>
     <div class="tools">
-      ${cells?`<span class="lbl">方案</span>${p.options.map((_,k)=>`<button type="button" class="ib${k===p.pick?' on':''}" data-act="pick" data-u="${p.uid}" data-k="${k}" aria-pressed="${k===p.pick}">${k+1}</button>`).join('')}
-      <button type="button" class="ib" data-act="regen" data-u="${p.uid}">↻ 重產生</button>
-      <button type="button" class="ib" data-act="playpart" data-u="${p.uid}" aria-label="播放這段" title="播放這段">▶</button><span class="gap"></span>`:''}
+      ${cells&&p.options.length>1?`<span class="lbl">方案</span>${p.options.map((_,k)=>`<button type="button" class="ib${k===p.pick?' on':''}" data-act="pick" data-u="${p.uid}" data-k="${k}" aria-pressed="${k===p.pick}">${k+1}</button>`).join('')}
+      <span class="gap"></span>`:''}<button type="button" class="ib" data-act="regen" data-u="${p.uid}">✨ 自動產生</button><button type="button" class="ib" data-act="playpart" data-u="${p.uid}" aria-label="播放這段" title="播放這段">▶</button>
       <button type="button" class="ib" data-act="pat" data-u="${p.uid}" title="刷法">🎸 ${esc(patternOf(p).name)}</button>
       <button type="button" class="ib" data-act="mel" data-u="${p.uid}" aria-label="錄這段的旋律" title="錄這段的旋律">🎤</button>
       <button type="button" class="ib" data-act="up" data-u="${p.uid}" ${idx===0?'disabled':''} aria-label="往前移">↑</button>
@@ -708,7 +725,7 @@ function partHTML(p,idx){
       <button type="button" class="ib warn" data-act="del" data-u="${p.uid}" aria-label="刪除這段" title="刪除這段">✕</button>
     </div>
     ${`<div class="mix"><label>和弦音量<input type="range" min="0" max="1.5" step="0.05" value="${volOf(p).ch}" data-vol="ch" data-u="${p.uid}" aria-label="${esc(partName(p))}的和弦音量"></label>${hasMel(p)?`<label>旋律音量<input type="range" min="0" max="2" step="0.05" value="${volOf(p).mel}" data-vol="mel" data-u="${p.uid}" aria-label="${esc(partName(p))}的旋律音量"></label>`:''}</div>`}
-    <div class="bars">${measures}</div></section>`;
+    <div class="bars">${measures}</div>${builderHTML(p)}</section>`;
 }
 function renderScore(){
   const sc=document.getElementById('score');
@@ -724,7 +741,7 @@ function renderMood(){
   const box=document.getElementById('mood');
   if(!state.parts.length){box.hidden=true;return;}box.hidden=false;
   box.classList.toggle('need',!state.mood);
-  box.innerHTML=`<h2 id="h-mood">${state.mood?'整首歌的情緒':'選這首歌的情緒，和弦就會排進譜裡（也可以長按小節自己填）'}</h2>
+  box.innerHTML=`<h2 id="h-mood">${state.mood?'整首歌的情緒':'選這首歌的情緒，每一小節都會給你和弦建議'}</h2>
     <div class="chips">${MOODS.map(m=>`<button type="button" class="chip${m.id===state.mood?' on':''}" data-mood="${m.id}" aria-pressed="${m.id===state.mood}"><b>${m.name}</b><small>${m.ex.map(id=>chordName(inst(id),true)).join(' ')}</small></button>`).join('')}</div>
     ${state.mood?`<div class="row"><label for="sub" style="font-size:13px;color:var(--muted);display:flex;gap:6px;align-items:center">副情緒（30%）<select id="sub"><option value="">無</option>${MOODS.filter(m=>m.id!==state.mood).map(m=>`<option value="${m.id}"${state.sub===m.id?' selected':''}>${m.name}</option>`).join('')}</select></label>
       <button type="button" class="btn sm" data-act="moodDemo">▶ 試聽情緒範例</button></div>`:''}`;
@@ -745,7 +762,7 @@ function renderCapoHint(){
   if(best===state.capo){b.textContent='目前的和弦已經是最好按的組合';b.disabled=true;b.dataset.capo='';}
   else{const sk=mod(state.key-best);b.textContent=`更好彈：夾第 ${best} 格，用 ${(FLATKEYS.has(sk)?NOTE_F:NOTE_S)[sk]} 調的按法彈`;b.disabled=false;b.dataset.capo=best;}
 }
-function renderAddBtns(){document.getElementById('addBtns').innerHTML=SECS.map(s=>`<button type="button" data-act="add" data-t="${s.id}">＋ ${s.name}</button>`).join('')+`<button type="button" class="recb" data-act="rec">🎤 從哼唱錄音產生</button>`;}
+function renderAddBtns(){document.getElementById('addBtns').innerHTML=SECS.map(s=>`<button type="button" data-act="add" data-t="${s.id}">＋ ${s.name}</button>`).join('')+`<button type="button" class="recb" data-act="melnew">🎤 唱一段旋律（新增段落）</button>`;}
 function updateNow(){if(playing)return;const bars=state.parts.reduce((a,p)=>a+p.len,0);const sec=bars*4*60/state.bpm;
   document.getElementById('now').textContent=bars?`${state.parts.length} 個段落 · ${bars} 小節 · 約 ${Math.floor(sec/60)} 分 ${String(Math.round(sec%60)).padStart(2,'0')} 秒`:'還沒有段落';
   document.getElementById('playAll').disabled=!state.parts.some(cellsOf)&&!playing;}
@@ -782,11 +799,13 @@ function pickHTML(uid,i,cell){
   const k=shapeKey(),dia=[0,2,4,5,7,9,11];
   const rootName=r=>{const pc=mod(k+r);if(dia.includes(r))return (FLATKEYS.has(k)?NOTE_F:NOTE_S)[pc];return (r===6?NOTE_S:NOTE_F)[pc];};
   const ch=makeChord(sh.pr,sh.pq),{P,N}=neighbors(uid,i),two=cell.chords.length>1,empty=!cell.chords.length;
+  const pp=pOf(uid),fitQ=['I','ii','iii','IV','V','vi','vii','iv','bVI','bVII','bIII'].map(id=>({id,f:melFitAt(pp,i,inst(id))})).filter(x=>x.f!==null&&x.f>=.3).sort((a,b)=>b.f-a.f).slice(0,2).map(x=>x.id);
   const quick=['I','ii','iii','IV','V','vi','vii','iv','bVI','bVII','bIII'].map(id=>{const c=inst(id);const on=sh.pr===c.r&&sh.pq===c.q;
-    return `<button type="button" class="qc${on?' on':''}${LIB[id].type==='bor'?' qb':''}" data-act="pq" data-r="${c.r}" data-q="${c.q}" aria-pressed="${on}"><b>${esc(chordName(c))}</b><small>${esc(romanOf(c))}</small></button>`;}).join('');
+    return `<button type="button" class="qc${on?' on':''}${LIB[id].type==='bor'?' qb':''}" data-act="pq" data-r="${c.r}" data-q="${c.q}" aria-pressed="${on}"><b>${esc(chordName(c))}</b><small>${esc(romanOf(c))}${fitQ.includes(id)?' ♪搭':''}</small></button>`;}).join('');
   const roots=Array.from({length:12},(_,r)=>`<button type="button" class="rt${dia.includes(r)?' dia':''}${sh.pr===r?' on':''}" data-act="pr" data-r="${r}" aria-pressed="${sh.pr===r}">${rootName(r)}</button>`).join('');
   const quals=QLIST.map(([q,n])=>`<button type="button" class="rt${sh.pq===q?' on':''}" data-act="pqq" data-q="${q}" aria-pressed="${sh.pq===q}">${n}</button>`).join('');
   const fb=[];if(P&&!two)fb.push(`接前一個 ${esc(chordName(P))}：<b>${joinWord(T(P,ch))}</b>`);if(N)fb.push(`接下一個 ${esc(chordName(N))}：<b>${joinWord(T(ch,N))}</b>`);
+  {const mf=melFitAt(pOf(uid),i,ch);if(mf!==null)fb.push(`跟旋律：<b>${mf>=.3?'吻合':mf>=0?'還可以':'不太吻合'}</b>`);}
   const v=curV(ch);
   const btns=empty||!two?`<button type="button" class="btn sm pri" data-act="papply" data-m="all">套用</button>${empty?'':`<button type="button" class="btn sm" data-act="papply" data-m="add">加在後半小節</button>`}`
     :`<button type="button" class="btn sm pri" data-act="papply" data-m="all">套用到整小節</button><button type="button" class="btn sm" data-act="papply" data-m="first">換掉前半</button><button type="button" class="btn sm" data-act="papply" data-m="second">換掉後半</button>`;
@@ -860,6 +879,7 @@ function renderSheet(){
       <div class="rm">${esc(romanOf(c))}${state.capo?` · 實際 ${esc(chordName(c,true))}`:''}</div>
       <div><span class="pill">${FN[fn(c)]}${kindOf(c)==='bor'?' · 借用':kindOf(c)==='sec'?' · 副屬':''}</span></div>
       ${L?`<div class="tags">${L.tags.map(t=>`<span class="tag">${t}</span>`).join('')}</div>`:''}
+      ${j===0?`<div class="why">為什麼是 ${esc(chordName(c))}：${esc([roleOf(c)].concat(whyParts(p,i,c)).join('；'))}</div>`:''}
       ${l.length?`<div class="vnav"><button type="button" data-act="vstep" data-j="${j}" data-d="-1" aria-label="上一個按法">‹</button><span>按法 ${Math.min(c.vi||0,l.length-1)+1}/${l.length}${v&&v.d>1?' · 需橫按':''}</span><button type="button" data-act="vstep" data-j="${j}" data-d="1" aria-label="下一個按法">›</button></div><div class="frets">${fretText(v)}</div>`:''}
     </div></div>`;}).join('');
   let body='';
@@ -908,10 +928,10 @@ function addPart(type){
   const sec=SECMAP[type],p={uid:newUid(),type,len:sec.len,mood:'',options:[],pick:0};
   state.parts.push(p);
   const src=state.parts.find(x=>x.type===type&&x!==p&&cellsOf(x));
-  if(src){copyFrom(src,p);if(!joinOK(state.parts.length-1)&&state.mood)genPart(p.uid,false);}else if(state.mood)genPart(p.uid,false);
+  if(src)copyFrom(src,p);else if(!state.activeUid||!pOf(state.activeUid)||!(cellsOf(pOf(state.activeUid))||[{chords:[]}]).some(c=>!c.chords.length))state.activeUid=p.uid;
   renderMood();renderScore();save();
   const el=document.getElementById('part-'+p.uid);if(el)el.scrollIntoView({block:'nearest',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
-  toast(src?`已新增${sec.name}，沿用前面的和弦`:state.mood?`已新增${sec.name}`:`已新增${sec.name}：選情緒自動排和弦，或長按小節自己填`);
+  toast(src?`已新增${sec.name}，沿用前面的和弦`:state.mood?`已新增${sec.name}，從第 1 小節開始選和弦`:`已新增${sec.name}：選好情緒就會給你每一小節的建議`);
 }
 function movePart(uid,d){const i=pIdx(uid),j=i+d;if(j<0||j>=state.parts.length)return;const a=state.parts;[a[i],a[j]]=[a[j],a[i]];renderScore();save();
   const b=document.querySelector(`[data-act=${d<0?'up':'down'}][data-u="${uid}"]`);if(b&&!b.disabled)b.focus();else{const o=document.querySelector(`[data-act=${d<0?'down':'up'}][data-u="${uid}"]`);if(o)o.focus();}}
@@ -923,8 +943,8 @@ function toast(t,action){const e=document.getElementById('toast');document.getEl
 document.getElementById('toastB').addEventListener('click',()=>{if(undo){undo();undo=null;renderMood();renderScore();save();toast('已復原');}});
 document.addEventListener('click',e=>{
   const mood=e.target.closest('[data-mood]');
-  if(mood){const first=!state.mood;state.mood=mood.dataset.mood;if(state.sub===state.mood)state.sub='';state.bpm=MOODS.find(x=>x.id===state.mood).bpm;genAll(true);renderAll();
-    toast(first?'和弦已排進譜裡：單擊試聽，長按修改':'已依新情緒重新產生（鎖定的小節不變）');return;}
+  if(mood){const first=!state.mood;state.mood=mood.dataset.mood;if(state.sub===state.mood)state.sub='';state.bpm=MOODS.find(x=>x.id===state.mood).bpm;if(!state.activeUid||!pOf(state.activeUid))state.activeUid=(state.parts[0]||{}).uid;renderAll();
+    toast(first?'從第 1 小節開始選和弦，或按「自動產生」':'情緒已更換，之後的建議會照新的情緒');return;}
   const a=e.target.closest('[data-act]');if(!a)return;const act=a.dataset.act,u=a.dataset.u;
   if(act==='close'){if(Date.now()-(sh.at||0)>450)closeSheet();}
   else if(act==='closecopy')document.getElementById('copyDlg').hidden=true;
@@ -935,7 +955,14 @@ document.addEventListener('click',e=>{
   else if(act==='del')delPart(u);
   else if(act==='jump'){e.preventDefault();const el=document.getElementById('part-'+u);if(el)el.scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});}
   else if(act==='pick'){pOf(u).pick=+a.dataset.k;renderScore();save();}
-  else if(act==='regen'){if(!pOf(u).mood&&!state.mood&&!pOf(u).fit){toast('先選這首歌的情緒，才能自動產生');return;}genPart(u,true);renderScore();save();toast('已重新產生 3 個方案');}
+  else if(act==='regen'){const p=pOf(u);if(!p.mood&&!state.mood){toast('先選這首歌的情緒，才能自動產生');return;}const c=ensureCells(p),empty=c.some(x=>!x.chords.length);
+    if(empty)genFill(u);else genPart(u,true);renderScore();save();toast(empty?'已自動排好還沒選的小節（每格長按可看理由）':'已重新產生 3 個方案（鎖定的小節不變）');}
+  else if(act==='stepgo'){const p=pOf(u),i=+a.dataset.i,ch=stepCache[u+':'+i][+a.dataset.k].c,cells=ensureCells(p);cells[i].chords=[JSON.parse(JSON.stringify(ch))];state.activeUid=u;renderScore();save();
+    const P=i>0&&cells[i-1].chords.length?cells[i-1].chords.slice(-1)[0]:prevChordBefore(pIdx(u));playSeq([P,ch].filter(Boolean));}
+  else if(act==='stepprev'){const p=pOf(u),i=+a.dataset.i,ch=stepCache[u+':'+i][+a.dataset.k].c,cells=ensureCells(p);const P=i>0&&cells[i-1].chords.length?cells[i-1].chords.slice(-1)[0]:prevChordBefore(pIdx(u));const N=cells[i+1]&&cells[i+1].chords[0];playSeq([P,ch,N].filter(Boolean));}
+  else if(act==='stepother'){openSheet(u,a.dataset.i);sh.top='chord';sh.tab='pick';renderSheet();}
+  else if(act==='stepact'){state.activeUid=u;renderScore();save();const el=document.getElementById('step-'+u);if(el)el.scrollIntoView({block:'nearest'});}
+  else if(act==='stepclear'){const p=pOf(u);(cellsOf(p)||[]).forEach(c=>{if(!c.locked)c.chords=[];});p.options=[cellsOf(p)];p.pick=0;state.activeUid=u;renderScore();save();toast('已清空沒鎖定的小節，可以從頭選');}
   else if(act==='playpart'){if(playing){stopAll();return;}const p=pOf(u);playCells(cellsOf(p).map((cell,i)=>({uid:u,i,cell,label:partName(p)})));}
   else if(act==='moodDemo'){const m=MOODS.find(x=>x.id===state.mood);playSeq(m.ex.concat([m.ex[0]]).map(id=>inst(id)));}
   else if(act==='tab'){sh.tab=a.dataset.t;renderSheet();}
@@ -966,6 +993,8 @@ document.addEventListener('click',e=>{
   else if(act==='patsave'){const m=patEnsureSaved();pat.base=m.id;save();renderPat();toast(`已存成「${m.name}」`);}
   else if(act==='patdel'){state.customPatterns=(state.customPatterns||[]).filter(x=>x.id!==pat.base);state.parts.forEach(x=>{if(x.pattern===pat.base)x.pattern='basic';});pat.draft=PATTERNS[0].slots;pat.base='basic';save();renderPat();renderScore();}
   else if(act==='mel')openMel(u);
+  else if(act==='melnew'){const pt={uid:newUid(),type:'chorus',len:8,mood:'',options:[],pick:0};state.parts.push(pt);renderScore();openMel(pt.uid);mel.isNew=true;renderMel();}
+  else if(act==='melkey'){state.key=+a.dataset.k;renderAll();renderMel();toast('已改成跟你唱的一樣的調');}
   else if(act==='melclose')closeMel();
   else if(act==='melgo')melGo();
   else if(act==='melstop'){if(mel.stop)mel.stop(false);}
@@ -993,9 +1022,9 @@ document.addEventListener('click',e=>{
 });
 document.addEventListener('change',e=>{
   const t=e.target;
-  if(t.dataset.act==='len'){const p=pOf(t.dataset.u);p.len=+t.value;if(p.fit)p.fit=Array.from({length:p.len},(_,i)=>p.fit[i]||new Array(12).fill(0));if(cellsOf(p)||state.mood)genPart(p.uid,true);renderScore();save();}
-  else if(t.dataset.act==='pmood'){const p=pOf(t.dataset.u);p.mood=t.value;if(p.mood||state.mood)genPart(p.uid,true);renderScore();save();toast('已依這段的情緒重新產生');}
-  else if(t.id==='sub'){state.sub=t.value;genAll(true);renderAll();toast('已加入副情緒重新產生');}
+  if(t.dataset.act==='len'){const p=pOf(t.dataset.u);p.len=+t.value;if(hasMel(p))p.fit=melWeights(p,melNotes(p));(p.options||[]).forEach(o=>{while(o.length<p.len)o.push({chords:[],locked:false,lyric:''});o.length=p.len;});renderScore();save();}
+  else if(t.dataset.act==='pmood'){const p=pOf(t.dataset.u);p.mood=t.value;renderScore();save();toast('這段之後的建議會照這個情緒');}
+  else if(t.id==='sub'){state.sub=t.value;renderAll();toast('已加入副情緒，之後的建議會參考它');}
 });
 document.addEventListener('input',e=>{
   if(e.target.dataset.ly){const t=e.target,p=pOf(t.dataset.u),i=+t.dataset.i,c=cellsOf(p);if(c)c[i].lyric=t.value;else{p.lyrics=p.lyrics||[];p.lyrics[i]=t.value;}save();}
@@ -1295,6 +1324,8 @@ document.addEventListener('change',e=>{
   const t=e.target;
   if(t.id==='recFile')onRecFile(t.files[0]);
   else if(t.id==='melFile')onMelFile(t.files[0]);
+  else if(t.id==='melType'){pOf(mel.uid).type=t.value;renderScore();renderMel();}
+  else if(t.id==='melLen'){pOf(mel.uid).len=+t.value;renderScore();renderMel();}
   else if(t.id==='melBack')mel.backing=t.checked;
   else if(t.id==='melRefit')mel.refit=t.checked;
   else if(t.id==='melShiftR'){mel.nudge=+t.value/1000;mel.notes=curMelNotes();renderMel();const r=document.getElementById('melShiftR');if(r)r.focus();}
@@ -1380,13 +1411,13 @@ function scheduleMelBar(m,i,t,beat,bus){
 let mel={uid:null,phase:'idle',err:'',notes:null,pcm:null,offset:0,backing:true,refit:true,barNow:0,stop:null,src:''};
 function openMel(uid){const p=pOf(uid);mel={uid,phase:'idle',err:'',notes:null,pcm:null,offset:0,backing:!!(cellsOf(p)&&cellsOf(p).some(c=>c.chords.length)),refit:false,barNow:0,stop:null,src:''};
   document.getElementById('melDlg').hidden=false;document.body.style.overflow='hidden';renderMel();}
-function closeMel(){if(mel.stop)mel.stop(true);stopAll();document.getElementById('melDlg').hidden=true;document.body.style.overflow='';}
+function closeMel(){if(mel.stop)mel.stop(true);stopAll();if(mel.isNew&&!mel.saved){const k=pIdx(mel.uid);if(k>=0)state.parts.splice(k,1);renderMood();renderScore();save();}document.getElementById('melDlg').hidden=true;document.body.style.overflow='';}
 function renderMel(){
   const p=pOf(mel.uid),pn=document.getElementById('melPn');if(!p){closeMel();return;}
   const hasCh=!!(cellsOf(p)&&cellsOf(p).some(c=>c.chords.length));
   let body='';
   if(mel.phase==='idle'||mel.phase==='err'){
-    body=`<ol class="steps"><li>戴上耳機（有線最準），按「開始錄音」。</li><li>先聽 1 小節預備拍，接著${hasCh?'跟著伴奏和節拍器':'跟著節拍器'}唱或哼 ${p.len} 小節。</li><li>錄完會自動對齊，${hasCh?'並標出跟和弦不太吻合的小節':'並依旋律幫這段配和弦'}。</li></ol>
+    body=`${mel.isNew?`<div class="row"><label class="f" for="melType" style="flex:0 0 auto">放進哪種段落<select id="melType">${SECS.map(x=>`<option value="${x.id}"${x.id===p.type?' selected':''}>${x.name}</option>`).join('')}</select></label><label class="f" for="melLen" style="flex:0 0 auto">小節數<select id="melLen">${[4,8,12,16].map(l=>`<option value="${l}"${l===p.len?' selected':''}>${l} 小節</option>`).join('')}</select></label></div>`:''}<ol class="steps"><li>戴上耳機（有線最準），按「開始錄音」。</li><li>先聽 1 小節預備拍，接著${hasCh?'跟著伴奏和節拍器':'跟著節拍器'}唱或哼 ${p.len} 小節。</li><li>錄完會自動對齊拍子。旋律只當參考，不會改動任何和弦。</li></ol>
       <div class="row"><span class="hint">速度 ${state.bpm} · ${p.len} 小節 · 約 ${Math.round((p.len+1)*4*60/state.bpm)} 秒</span>
       ${hasCh?`<label class="hint" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="melBack" ${mel.backing?'checked':''}> 播伴奏</label>`:''}</div>
       <div class="row"><button type="button" class="btn pri" data-act="melgo">● 開始錄音</button></div>
@@ -1404,12 +1435,16 @@ function renderMel(){
       <div class="roll"><canvas id="melCanvas" height="150" aria-label="錄到的旋律"></canvas></div>
       <div class="row"><label class="f" for="melShiftR" style="flex:1;min-width:180px">對齊微調（${Math.round(mel.nudge*1000)} 毫秒）<input id="melShiftR" type="range" min="-250" max="250" step="10" value="${Math.round(mel.nudge*1000)}"></label>
         <button type="button" class="btn" data-act="melplay">▶ 旋律＋伴奏</button></div>
-      ${hasCh?`<label class="hint" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="melRefit" ${mel.refit?'checked':''}> 存完後依旋律重新配和弦（鎖定的小節不變）</label>`:'<p class="hint">這段還沒有和弦，存完會依旋律自動配和弦。</p>'}
+      <p class="hint">旋律只當參考：和弦由你自己選，跟旋律不吻合的小節會在譜上標「?」，選和弦時也會標出跟旋律最搭的和弦。</p>
+      ${(()=>{if(state.parts.some(x=>(cellsOf(x)||[]).some(c=>c.chords.length)))return '';const k=keyOfNotes(mel.notes);return k!==state.key?`<div class="row"><span class="hint">你唱的旋律像是 ${(FLATKEYS.has(k)?NOTE_F:NOTE_S)[k]} 大調。</span><button type="button" class="btn sm" data-act="melkey" data-k="${k}">把歌曲改成 ${(FLATKEYS.has(k)?NOTE_F:NOTE_S)[k]} 大調</button></div>`:'';})()}
       <div class="row"><button type="button" class="btn pri" data-act="melsave">存到「${esc(partName(p))}」</button><button type="button" class="btn" data-act="melredo">重錄</button></div>`;
   }
   pn.innerHTML=`<div class="sh-top"><div class="t">錄「${esc(partName(p))}」的旋律</div><button type="button" class="btn sm" data-act="melclose">關閉</button></div>${body}`;
   if(mel.phase==='done')drawMel();
 }
+function keyOfNotes(notes){const h=new Array(12).fill(0);notes.forEach(n=>{h[mod(n.p)]+=n.d;});let best={s:-9,k:state.key};
+  const corr=(prof,r)=>{let mx=0,my=0;for(let i=0;i<12;i++){mx+=h[i];my+=prof[i];}mx/=12;my/=12;let a=0,b=0,c=0;for(let i=0;i<12;i++){const x=h[mod(i+r)]-mx,y=prof[i]-my;a+=x*y;b+=x*x;c+=y*y;}return a/Math.sqrt((b*c)||1);};
+  for(let r=0;r<12;r++){const s1=corr(KMAJ,r),s2=corr(KMIN,r);if(s1>best.s)best={s:s1,k:r};if(s2>best.s)best={s:s2,k:mod(r+3)};}return best.k;}
 function curMelNotes(){const beat=60/state.bpm;return mel.notesSec.map(n=>({b:(n.t-mel.start-mel.nudge)/beat,d:n.d/beat,p:n.p})).filter(n=>n.b+n.d>0&&n.b<pOf(mel.uid).len*4);}
 function drawMel(playB){
   const cv=document.getElementById('melCanvas');if(!cv)return;const p=pOf(mel.uid),wrap=cv.parentElement,N=mel.notes,bars=p.len;
@@ -1485,9 +1520,8 @@ function melSave(){
   const p=pOf(mel.uid),id=newUid(),a={pcm:mel.pcm,sr:16000,offset:mel.start+mel.nudge,bpm:state.bpm,key:state.key};
   melAudio[id]=a;idb.put(id,{pcm:a.pcm,sr:a.sr,offset:a.offset,bpm:a.bpm,key:a.key});
   p.melody={notes:mel.notes,key:state.key,audio:id};p.fit=melWeights(p,mel.notes);
-  const hasCh=!!(cellsOf(p)&&cellsOf(p).some(c=>c.chords.length));
-  if(!hasCh||mel.refit)genPart(p.uid,true);else (p.options||[]).forEach(o=>markUnsure(o,p.fit));
-  closeMel();renderScore();save();toast(!hasCh?'旋律已存好，並依旋律配好和弦':mel.refit?'旋律已存好，和弦已依旋律重新配過':'旋律已存好，譜上的音符就是你唱的旋律');
+  mel.saved=true;if(mel.isNew)state.activeUid=p.uid;
+  closeMel();renderMood();renderScore();save();toast('旋律已存好，譜上的音符就是你唱的旋律');
 }
 async function loadMelAudio(){for(const p of state.parts){if(p.melody&&p.melody.audio&&!melAudio[p.melody.audio]){const v=await idb.get(p.melody.audio);if(v)melAudio[p.melody.audio]=v;}}}
 
@@ -1640,6 +1674,77 @@ function patEnsureSaved(){const list=allPatterns();let m=list.find(x=>x.slots===
 function patPlay(){const p=pOf(pat.uid),cells=(cellsOf(p)||[]).filter(c=>c.chords.length).slice(0,2);
   const use=cells.length?cells:[{chords:[inst('I')]},{chords:[inst('IV')]}];stopAll();const c=ac();playing=true;document.getElementById('playAll').textContent='■ 停止';
   const beat=60/state.bpm;let t=c.currentTime+.1;const b=busFor(p.uid);use.forEach(cell=>{playBar(cell,pat.draft,t,beat,b.ch);t+=4*beat;});timers.push(setTimeout(stopAll,(t-c.currentTime)*1000+300));}
+
+
+/* ---------- 一步一步選和弦：候選與理由 ---------- */
+const ROLE={I:'安定、回家',ii:'柔和地往前',iii:'曖昧、淡淡的',IV:'溫暖、開闊',V:'緊張、想回家',vi:'感傷、內省',vii:'不安',iv:'苦澀、懷念',bVI:'壯闊',bVII:'豁達',bIII:'意外的轉折',Vii:'推向下一個 ii',Vvi:'推向 vi，戲劇性',VIV:'推向 IV',VV:'推向 V，拉高期待'};
+const roleOf=c=>c.lib&&ROLE[c.lib]?ROLE[c.lib]:({T:'穩定',S:'離開',D:'緊張'})[fn(c)];
+function firstEmpty(p){const c=cellsOf(p);if(!c)return 0;const k=c.findIndex(x=>!x.chords.length);return k;}
+function isUnsure(p,i,cell){if(!hasMel(p)||!p.fit||!p.fit[i]||!cell||!cell.chords.length)return false;const w=p.fit[i],h=w.h;if(!h)return false;const s=h[0].reduce((a,v)=>a+v,0)+h[1].reduce((a,v)=>a+v,0);
+  const f=cell.chords.length>1?(halfFit(cell.chords[0],h[0])+halfFit(cell.chords[1],h[1]))/2:fitScore(cell.chords[0],w);return s>0&&f<.2;}
+function melFitAt(p,i,c){if(!hasMel(p)||!p.fit||!p.fit[i])return null;const w=p.fit[i],s=w.c.reduce((a,v)=>a+v,0)+w.l.reduce((a,v)=>a+v,0);return s>0?fitScore(c,w):null;}
+function motionText(P,c){const d=mod(c.r-P.r);return d===5?'根音往下五度，最有推進力':d===7?'根音往上五度':d===8||d===9?'根音往下三度，很柔順':d===3||d===4?'根音往上三度':d===1||d===2?'往上走一步':d===10||d===11?'往下走一步':'同一個根音';}
+function whyParts(p,i,c){
+  const idx=pIdx(p.uid),cells=cellsOf(p)||[],L=p.len,sec=SECMAP[p.type],moodId=p.mood||state.mood,m=MOODS.find(x=>x.id===moodId);
+  const pc=cells[i-1],P=pc&&pc.chords.length?pc.chords[pc.chords.length-1]:(i===0?prevChordBefore(idx):null);
+  const nc=cells[i+1],N=nc&&nc.chords.length?nc.chords[0]:(i===L-1?nextChordAfter(idx):null);
+  const out=[];
+  if(P){const ra=resOf(P);if(ra!==undefined&&c.r===ra)out.push(`前一個 ${chordName(P)} 是副屬和弦，接這個最自然`);
+    else{const t=T(P,c);out.push(`接在 ${chordName(P)} 後面${t>=4?'很順':t>=3?'自然':'有點意外'}（${motionText(P,c)}）`);}}
+  if(m&&c.lib){if(m.boost.includes(c.lib))out.push(`「${m.name}」常用`);else if(m.reduce.includes(c.lib))out.push(`在「${m.name}」裡比較少見，會帶出不同的味道`);}
+  if(kindOf(c)==='bor')out.push('從小調借來的和弦，讓聲音一下變色');
+  if(i===0&&m&&startSet(p,m).includes(c.lib))out.push('適合當這段的開頭');
+  if(i===L-1){out.push(c.lib==='I'?'回到主和弦，有「說完了」的感覺':c.lib==='V'?'停在 V，像話還沒說完，帶進下一段':c.lib==='vi'?'停在小和弦，留下一點憂傷':c.lib==='IV'?'停在 IV，溫和、沒有完全結束':'結尾停在這裡，會有懸著的感覺');}
+  else if(p.type==='pre'&&i>=L-2&&tension(c)>=3)out.push('越來越緊張，準備進副歌');
+  if(N&&!(i===L-1)){const t=T(c,N);if(t<2)out.push(`接後面的 ${chordName(N)} 比較跳`);}
+  if(!out.length)out.push(kindOf(c)==='dia'?(i===0?'調內和弦，用它開頭也很自然':'調內和弦，聽起來穩當'):'比較少見的選擇，會帶出不一樣的味道');
+  const mf=melFitAt(p,i,c);if(mf!==null)out.push(mf>=.3?'♪ 跟這小節的旋律吻合':mf>=0?'♪ 跟旋律還可以':'♪ 跟這小節的旋律不太搭');
+  return out;
+}
+let stepCache={};
+function stepCands(p,i){
+  const idx=pIdx(p.uid),cells=cellsOf(p)||[],L=p.len,sec=SECMAP[p.type],moodId=p.mood||state.mood,m=MOODS.find(x=>x.id===moodId)||{start:['I'],boost:[],reduce:[]};
+  const W=weightFn(moodId,p.mood?'':state.sub),start=startSet(p,m),target=sec.t[0]+(sec.t[1]-sec.t[0])*(L===1?0:i/(L-1));
+  const pc=cells[i-1],P=pc&&pc.chords.length?pc.chords[pc.chords.length-1]:(i===0?prevChordBefore(idx):null);
+  const nc=cells[i+1],N=nc&&nc.chords.length?nc.chords[0]:(i===L-1?nextChordAfter(idx):null);
+  const used=cells.filter((c,k)=>k!==i&&c.chords.length).map(c=>c.chords[0]);const out=[];
+  Object.keys(LIB).forEach(id=>{const c=inst(id);
+    if(P&&resOf(P)!==undefined&&c.r!==resOf(P))return;if(kindOf(c)==='sec'&&(i===L-1||(N&&c.r!==mod(N.r+7))))return;
+    const tp=P?T(P,c):3;if(P&&tp<1.5)return;let s=tp*W(id);
+    if(N){const tn=T(c,N);if(tn<1.5)return;s+=tn*.8;}
+    if(i===0&&start.includes(id))s+=2.5;if(i===0&&kindOf(c)!=='dia')s-=2.5;if(i===L-1)s+=sec.end.includes(id)?2.5:-1.5;
+    s-=.8*Math.abs(tension(c)-target)+used.filter(u=>same(u,c)).length*.6+(P&&same(P,c)?1.2:0);
+    if(kindOf(c)==='bor'&&used.some(u=>kindOf(u)==='bor'))s-=2;
+    const mf=melFitAt(p,i,c);if(mf!==null)s+=mf*1.5;
+    out.push({c,s});});
+  out.sort((a,b)=>b.s-a.s);
+  const picks=[];for(const o of out){if(!picks.length||(picks.length===1&&fn(o.c)!==fn(picks[0].c))||(picks.length===2&&!picks.some(x=>same(x.c,o.c))))picks.push(o);if(picks.length===3)break;}
+  for(const o of out){if(picks.length>=3)break;if(!picks.some(x=>same(x.c,o.c)))picks.push(o);}
+  const res=picks.map(o=>({c:o.c,why:whyParts(p,i,o.c)}));stepCache[p.uid+':'+i]=res;return res;
+}
+function summaryText(p){
+  const cells=cellsOf(p)||[],ch=cells.map(c=>c.chords[0]).filter(Boolean);if(!ch.length)return '';
+  const f=ch[0],l=cells[cells.length-1].chords.slice(-1)[0],bor=cells.map((c,k)=>({c:c.chords[0],k})).filter(x=>x.c&&kindOf(x.c)==='bor');
+  let t=`從「${roleOf(f)}」的 ${chordName(f)} 出發`;
+  if(bor.length)t+=`，第 ${bor[0].k+1} 小節的 ${chordName(bor[0].c)} 是借用和弦，讓這段多了「${roleOf(bor[0].c)}」的味道`;
+  const ending=l.lib==='I'?'最後回到 '+chordName(l)+'，有「說完了」的感覺':l.lib==='V'?'最後停在 '+chordName(l)+'，像話還沒說完，把人帶進下一段':l.lib==='vi'?'最後停在 '+chordName(l)+'，留下一點憂傷':'最後停在 '+chordName(l)+'（'+roleOf(l)+'）';
+  return t+'，'+ending+'。';
+}
+function builderHTML(p){
+  const moodId=p.mood||state.mood,cells=cellsOf(p),fe=firstEmpty(p);
+  if(!moodId)return `<div class="step muted"><p class="hint">選好整首歌的情緒後，這裡會給你每一小節的和弦建議，每個建議都會說明理由。也可以長按小節自己選。</p></div>`;
+  if(cells&&fe<0){return `<div class="step done" id="step-${p.uid}"><div class="sh"><b>這段在說什麼</b></div><p class="sum">${esc(summaryText(p))}</p>
+    <p class="seq">${cells.map(c=>c.chords.map(x=>esc(chordName(x))).join('/')).join(' → ')}</p>
+    <div class="row"><button type="button" class="btn sm" data-act="stepclear" data-u="${p.uid}">清空重選</button><span class="hint">長按任一小節可以看它被選中的理由、換成別的和弦。</span></div></div>`;}
+  const i=fe<0?0:fe;
+  if(p.uid!==state.activeUid)return `<div class="step muted"><button type="button" class="btn sm" data-act="stepact" data-u="${p.uid}">選和弦（從第 ${i+1} 小節）</button></div>`;
+  const L=p.len,pos=i===0?'這段的開頭':i===L-1?'這段的最後一小節':`第 ${i+1} 小節`,cs=stepCands(p,i);
+  return `<div class="step" id="step-${p.uid}"><div class="sh"><b>${pos}：選一個和弦</b><span class="hint">${i+1} / ${L}</span></div>
+    ${cs.map((o,k)=>`<div class="scand f-${fn(o.c)}"><div class="sc-nm">${esc(chordName(o.c))}<small>${esc(romanOf(o.c))}</small></div>
+      <div class="sc-why"><span class="pill">${esc(roleOf(o.c))}</span> ${esc(o.why.join('；'))}</div>
+      <div class="sc-a"><button type="button" class="btn sm" data-act="stepprev" data-u="${p.uid}" data-i="${i}" data-k="${k}" aria-label="試聽 ${esc(chordName(o.c))}">▶</button><button type="button" class="btn sm pri" data-act="stepgo" data-u="${p.uid}" data-i="${i}" data-k="${k}">選這個</button></div></div>`).join('')}
+    <div class="row"><button type="button" class="btn sm" data-act="stepother" data-u="${p.uid}" data-i="${i}">其他和弦…</button><button type="button" class="btn sm" data-act="regen" data-u="${p.uid}">✨ 自動產生剩下的</button></div></div>`;
+}
 
 /* ---------- 開始 ---------- */
 load();if(state.melMode==='synth')state.melMode='inst';renderAddBtns();renderAll();loadMelAudio();
