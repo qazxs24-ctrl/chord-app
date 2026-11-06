@@ -145,7 +145,10 @@ input.lyin:focus{outline:none;border-bottom-color:var(--accent);background:var(-
 .meas .staff{display:block;width:100%;height:36px;margin-top:4px}
 .meas .ly{font-size:12.5px;padding:3px 6px 0;min-height:21px;line-height:1.35;overflow-wrap:anywhere}
 .meas .ly.ph2{color:var(--muted);opacity:.55}
-.meas .lk{position:absolute;top:0;right:4px;width:12px;height:12px;color:var(--muted)}
+.mlock{position:absolute;top:0;right:0;width:30px;height:28px;padding:0;border:0;background:none;display:flex;align-items:flex-start;justify-content:flex-end;padding:3px 4px 0 0;color:var(--muted);opacity:.35;cursor:pointer;z-index:2;touch-action:manipulation}
+.mlock:hover{opacity:.7}.mlock.on{opacity:1;color:var(--ink)}
+.mlock .lk{width:12px;height:12px;display:block}
+.meas.rest .nm{font-family:var(--font-b,inherit);font-size:13px;color:var(--muted);letter-spacing:.1em}
 .meas .unsure{position:absolute;top:0;right:18px;font-family:var(--font-d);font-weight:700;font-size:12px;color:var(--fD)}
 .meas .cap{font-family:var(--font-m);font-size:9.5px;color:var(--muted);padding:0 6px}
 .meas.playing{background:var(--hl)}
@@ -310,8 +313,9 @@ const FLATKEYS=new Set([5,10,3,8,1]);
 const PC={'C':0,'C#':1,'D♭':1,'D':2,'D#':3,'E♭':3,'E':4,'F':5,'F#':6,'G♭':6,'G':7,'G#':8,'A♭':8,'A':9,'A#':10,'B♭':10,'B':11};
 const Q={maj:{iv:[0,4,7],suf:''},min:{iv:[0,3,7],suf:'m'},dim:{iv:[0,3,6],suf:'dim'},'7':{iv:[0,4,7,10],suf:'7'},
   maj7:{iv:[0,4,7,11],suf:'maj7'},m7:{iv:[0,3,7,10],suf:'m7'},sus4:{iv:[0,5,7],suf:'sus4'},sus2:{iv:[0,2,7],suf:'sus2'},
-  add9:{iv:[0,4,7,14],suf:'add9'},dim7:{iv:[0,3,6,9],suf:'dim7'},m7b5:{iv:[0,3,6,10],suf:'m7♭5'}};
-const ROMSUF={maj7:'maj7',m7:'7','7':'7',sus4:'sus4',sus2:'sus2',add9:'add9',dim7:'°7',m7b5:'ø7',maj:'',min:'',dim:''};
+  add9:{iv:[0,4,7,14],suf:'add9'},dim7:{iv:[0,3,6,9],suf:'dim7'},m7b5:{iv:[0,3,6,10],suf:'m7♭5'},
+  '7sus4':{iv:[0,5,7,10],suf:'7sus4'},'6':{iv:[0,4,7,9],suf:'6'},m6:{iv:[0,3,7,9],suf:'m6'},madd9:{iv:[0,3,7,14],suf:'m(add9)'}};
+const ROMSUF={maj7:'maj7',m7:'7','7':'7',sus4:'sus4',sus2:'sus2',add9:'add9',dim7:'°7',m7b5:'ø7','7sus4':'7sus4','6':'6',m6:'6',madd9:'(add9)',maj:'',min:'',dim:''};
 const FN={T:'主（穩定）',S:'下屬（離開）',D:'屬（緊張）'};
 const LIB={
   I:{r:0,q:'maj',roman:'I',f:'T',t:1,type:'dia',tags:['安定','回家','明亮']},
@@ -383,24 +387,30 @@ const OPEN=[
  ['E♭','maj','xx1343','xx1243',1],
  ['F','min','xx3111','xx3111',1.5],['B♭','maj','xx3331','xx2341',1.5],['B','min','xx4432','xx3421',1.5],['B','maj','xx4442','xx2341',1.5],
  ['C#','min','xx2120','xx2130',1.5],['F#','min','xx4222','xx3111',1.5],['A♭','maj','xx1114','xx1114',1.5],['G','min','xx0333','xx0111',1.5],
- ['C','min','x3101x','x3102x',1],['D','m7b5','xx0111','xx0111',1]
+ ['C','min','x3101x','x3102x',1],['D','m7b5','xx0111','xx0111',1],
+ ['A','7sus4','x02030','x01030',1],['D','7sus4','xx0213','xx0214',1],['E','7sus4','020200','020300',1],['G','7sus4','330011','340011',1],
+ ['C','6','x32210','x42310',1],['D','6','xx0202','xx0103',1],['E','6','022120','023140',1],['G','6','320000','210000',1],['A','6','x02222','x01111',1],
+ ['A','m6','x02212','x02314',1],['D','m6','xx0201','xx0201',1],['E','m6','022020','023040',1],
+ ['A','madd9','x02410','x02410',1],['E','madd9','024000','013000',1]
 ];
 const parseF=s=>s.split('').map(ch=>ch==='x'?-1:+ch);
 const OPENMAP={};
 OPEN.forEach(([n,q,f,fi,d])=>{const k=PC[n]+'|'+q;(OPENMAP[k]=OPENMAP[k]||[]).push({frets:parseF(f),fingers:parseF(fi).map(x=>x<0?0:x),d,label:'開放'});});
 // 可移動把位：E 型（根音在 6 弦）、A 型（根音在 5 弦）；null = 不彈
 const ESH={maj:[[0,2,2,1,0,0],[1,3,4,2,1,1]],min:[[0,2,2,0,0,0],[1,3,4,1,1,1]],'7':[[0,2,0,1,0,0],[1,3,1,2,1,1]],
-  m7:[[0,2,0,0,0,0],[1,3,1,1,1,1]],maj7:[[0,null,1,1,0,null],[1,0,3,4,2,0]],sus4:[[0,2,2,2,0,0],[1,2,3,4,1,1]]};
+  m7:[[0,2,0,0,0,0],[1,3,1,1,1,1]],maj7:[[0,null,1,1,0,null],[1,0,3,4,2,0]],sus4:[[0,2,2,2,0,0],[1,2,3,4,1,1]],
+  '7sus4':[[0,2,0,2,0,0],[1,3,1,4,1,1]],m6:[[0,2,2,0,2,0],[1,2,3,1,4,1]]};
 const ASH={maj:[[null,0,2,2,2,0],[0,1,2,3,4,1]],min:[[null,0,2,2,1,0],[0,1,3,4,2,1]],'7':[[null,0,2,0,2,0],[0,1,3,1,4,1]],
   m7:[[null,0,2,0,1,0],[0,1,3,1,2,1]],maj7:[[null,0,2,1,2,0],[0,1,3,2,4,1]],sus4:[[null,0,2,2,3,0],[0,1,2,3,4,1]],
-  sus2:[[null,0,2,2,0,0],[0,1,3,4,1,1]],m7b5:[[null,0,1,0,1,null],[0,1,3,2,4,0]],dim:[[null,0,1,2,1,null],[0,1,2,4,3,0]],dim7:[[null,0,1,-1,1,null],[0,2,3,1,4,0]]};
+  sus2:[[null,0,2,2,0,0],[0,1,3,4,1,1]],m7b5:[[null,0,1,0,1,null],[0,1,3,2,4,0]],dim:[[null,0,1,2,1,null],[0,1,2,4,3,0]],dim7:[[null,0,1,-1,1,null],[0,2,3,1,4,0]],
+  '7sus4':[[null,0,2,0,3,0],[0,1,3,1,4,1]],'6':[[null,0,2,2,2,2],[0,1,3,3,3,3]],m6:[[null,0,null,-1,1,0],[0,2,0,1,4,3]],madd9:[[null,0,2,4,1,null],[0,1,3,4,2,0]]};
 const vcache={};
 function voicingsFor(pc,q){
   const key=pc+'|'+q; if(vcache[key])return vcache[key];
   const out=[]; const seen=new Set();
   const push=v=>{const s=v.frets.join(',');if(!seen.has(s)){seen.add(s);out.push(v);}};
   (OPENMAP[key]||[]).forEach(push);
-  const add=(sh,r,label)=>{ if(!sh)return; if(r<1||r>9)return;
+  const add=(sh,r,label)=>{ if(!sh)return; if(r<1||r>11)return;
     const frets=sh[0].map(o=>o===null?-1:r+o); if(frets.some((f,i)=>sh[0][i]!==null&&f<0))return;
     const d=(q==='dim'||q==='dim7')?3:2; push({frets,fingers:sh[1].slice(),d,label:`第 ${Math.min(...frets.filter(f=>f>0))} 格`});};
   add(ESH[q],(pc-4+12)%12,'E'); add(ASH[q],(pc-9+12)%12,'A');
@@ -420,19 +430,37 @@ const libOf=c=>c&&c.lib?LIB[c.lib]:null;
 const fn=c=>{const L=libOf(c);return L?L.f:(c.f||'D');};
 const kindOf=c=>{const L=libOf(c);return L?L.type:'pass';};
 const tension=c=>{const L=libOf(c);let t=L?L.t:4;if(c.q==='sus4')t+=.5;return t;};
-const tones=c=>Q[c.q].iv.map(i=>mod(c.r+i));
-function romanOf(c){const L=libOf(c);const base=L?L.roman:c.roman;const def=L?L.q:c.q;if(L&&c.q==='m7b5'&&c.q!==def)return base.replace('°','')+'ø7';if(c.q===def||(L&&L.type==='sec'))return base;return base+(ROMSUF[c.q]||'');}
+const tones=c=>{const t=Q[c.q].iv.map(i=>mod(c.r+i));if(c.b!==undefined&&!t.includes(mod(c.b)))t.push(mod(c.b));return t;};
+function romanOf(c){const L=libOf(c);const base=L?L.roman:c.roman;const def=L?L.q:c.q;if(L&&c.q==='m7b5'&&c.q!==def)return base.replace('°','')+'ø7';let out;if(c.q===def||(L&&L.type==='sec'))out=base;else out=base+(ROMSUF[c.q]||'');if(c.b!==undefined)out+='/'+DEG[mod(c.b)];return out;}
+const DEG=['1','♭2','2','♭3','3','4','♯4','5','♭6','6','♭7','7'];
 function resOf(c){const L=libOf(c);if(L&&L.type==='sec')return mod(L.r+5);return c.res;}
 function generic(a,b){let s=2;const d=mod(b.r-a.r);if(d===5)s+=2;else if(d===8||d===9)s+=1;else if(d===1||d===2)s+=1;
   const tb=tones(b);let c=0;tones(a).forEach(x=>{if(tb.includes(x))c++;});s+=Math.min(1,c*.5);if(fn(a)==='D'&&fn(b)!=='T')s-=1;return clamp(s,0,5);}
 function T(a,b){if(!a||!b)return 3;const ra=resOf(a);if(ra!==undefined)return b.r===ra?5:1;
   if(a.lib&&b.lib){if(a.lib===b.lib)return a.q===b.q?2:3;const A=a.lib,B=b.lib;if(TT[A]&&TT[A][B]!==undefined)return TT[A][B];const k=A+'>'+B;if(SPECIAL[k]!==undefined)return SPECIAL[k];}
   return generic(a,b);}
-const same=(a,b)=>a&&b&&a.r===b.r&&a.q===b.q;
+const same=(a,b)=>a&&b&&a.r===b.r&&a.q===b.q&&a.b===b.b;
 function shapeKey(){return mod(state.key-state.capo);}
 function prefOf(c,k){const L=libOf(c);if((L&&L.roman.startsWith('♭'))||c.flat)return 'flat';if(c.sharp)return 'sharp';return FLATKEYS.has(k)?'flat':'sharp';}
-function chordName(c,actual){const k=actual?state.key:shapeKey();const pc=mod(k+c.r);return (prefOf(c,k)==='flat'?NOTE_F:NOTE_S)[pc]+Q[c.q].suf;}
-const vlist=c=>voicingsFor(mod(shapeKey()+c.r),c.q);
+function chordName(c,actual){const k=actual?state.key:shapeKey();const pc=mod(k+c.r);const nm=(prefOf(c,k)==='flat'?NOTE_F:NOTE_S);return nm[pc]+Q[c.q].suf+(c.b!==undefined?'/'+nm[mod(k+c.b)]:'');}
+// 斜線和弦：把指定低音放到最低的弦（6→5→4 弦），下面的弦不彈
+function slashV(v,bpc,rpc,q){
+  const fr=v.frets,fi=v.fingers,need=[rpc,mod(rpc+Q[q].iv[1])];let best=null;
+  for(let s=0;s<3;s++)for(let f=0;f<=12;f++){if(mod(OPENS[s]+f)!==bpc)continue;
+    const keep=fr.map((x,i)=>i>s&&x>0?x:null).filter(x=>x!==null);
+    if(f>0&&keep.length){const lo=Math.min(...keep,f),hi=Math.max(...keep,f);if(hi-lo>3)continue;}
+    if(!keep.length&&f>7)continue;
+    const nf=fr.map((x,i)=>i<s?-1:i===s?f:x);
+    const pcs=nf.map((x,i)=>x<0?null:mod(OPENS[i]+x)).filter(x=>x!==null);
+    if(pcs.length<4||!need.every(n=>pcs.includes(n)))continue;
+    const sc=s+(f>0&&fr[s]!==f?1.5:0)+f*.05;
+    if(!best||sc<best.sc)best={sc,s,f,nf};}
+  if(!best)return null;
+  const {s,f,nf}=best,nfi=fi.map((x,i)=>i<=s?0:x);
+  if(f>0){if(fr[s]===f&&fi[s])nfi[s]=fi[s];else{const used=new Set(nfi.filter((x,i)=>i>s&&x>0));nfi[s]=[2,3,4,1].find(n=>!used.has(n))||4;}}
+  return {frets:nf,fingers:nfi,d:v.d+(f>0&&fr[s]!==f?.3:0),label:v.label};
+}
+const vlist=c=>{const l=voicingsFor(mod(shapeKey()+c.r),c.q);if(c.b===undefined)return l;const b=mod(shapeKey()+c.b);const rp=mod(shapeKey()+c.r),o=l.map(v=>slashV(v,b,rp,c.q)).filter(Boolean);return o.length?o:l;};
 const curV=c=>{const l=vlist(c);return l.length?l[Math.min(c.vi||0,l.length-1)]:null;};
 const diffOf=c=>{const l=vlist(c);return l.length?l[0].d:9;};
 const cellDiff=cell=>Math.max(...cell.chords.map(diffOf));
@@ -464,9 +492,10 @@ function beam(sec,opt){
       const target=sec.t[0]+(sec.t[1]-sec.t[0])*(L===1?0:i/(L-1));
       const nx=[];
       for(const b of beams){
-        const pc=b.path.length?b.path[b.path.length-1]:null;
+        const filled=b.path.filter(x=>x.chords.length),pc=filled.length?filled[filled.length-1]:null;
         const prev=pc?pc.chords[pc.chords.length-1]:opt.prevEnd;
         const locked=opt.locked[i];
+        if(locked&&!locked.chords.length){nx.push({path:[...b.path,locked],score:b.score,clean:b.clean||0});continue;} // 鎖定的空白小節＝留白
         const cands=locked?[locked]:pool.map(id=>({chords:[inst(id)],locked:false,lyric:''}));
         for(const cell of cands){
           const c=cell.chords[0];
@@ -481,7 +510,7 @@ function beam(sec,opt){
           if(strict&&!locked&&prev&&t<(i===0?3:1.5))continue;
           let jn=0;
           if(i===L-1&&opt.nextStart){const tn=T(cell.chords[cell.chords.length-1],opt.nextStart);if(strict&&!locked&&tn<3)continue;jn=tn*.8;}
-          let rep=0;const p=b.path;
+          let rep=0;const p=filled;
           if(p.length&&same(p[p.length-1].chords[0],c))rep+=opt.fit?.2:.7;
           if(p.length>1&&same(p[p.length-1].chords[0],c)&&same(p[p.length-2].chords[0],c))rep+=1;
           rep+=p.filter(x=>same(x.chords[0],c)).length*(opt.fit?.15:.6);
@@ -491,7 +520,7 @@ function beam(sec,opt){
           let cad=0;if(opt.fit&&!locked){if(kindOf(c)==='sec')cad-=.8;if(c.lib==='iii')cad-=.25;if(i===0&&!opt.prevEnd)cad+=c.lib==='I'?.6:c.lib==='vi'?.2:0;if(i===L-1)cad+=c.lib==='I'?2.6:c.lib==='V'?.4:0;else if((i+1)%4===0)cad+=(c.lib==='I'||c.lib==='V')?.8:(c.lib==='vi'||c.lib==='IV')?.2:0;}
           const endFit=opt.fit&&i===L-1;
           const s=t*E*(opt.fit?.55:1)+jn+F+cad-(endFit?0:(opt.fit?.3:.8)*Math.abs(tension(c)-target))-(endFit?0:rep),noise=Math.random()*opt.temp;
-          nx.push({path:[...p,locked?locked:cell],score:b.score+s+noise,clean:(b.clean||0)+s});
+          nx.push({path:[...b.path,locked?locked:cell],score:b.score+s+noise,clean:(b.clean||0)+s});
         }
       }
       nx.sort((a,b)=>b.score-a.score);beams=nx.slice(0,24);
@@ -509,7 +538,7 @@ function diverse(list,n){
   }
   return out.length?out:list.slice(0,1);
 }
-function prevChordBefore(idx){for(let j=idx-1;j>=0;j--){const c=cellsOf(state.parts[j]);if(c){const l=c[c.length-1];return l.chords[l.chords.length-1]||null;}}return null;}
+function prevChordBefore(idx){for(let j=idx-1;j>=0;j--){const c=cellsOf(state.parts[j]);if(c){const f=c.filter(x=>x.chords.length);if(!f.length)continue;const l=f[f.length-1];return l.chords[l.chords.length-1];}}return null;}
 function nextChordAfter(idx){for(let j=idx+1;j<state.parts.length;j++){const c=cellsOf(state.parts[j]);if(c)return c[0].chords[0]||null;}return null;}
 function firstLibOfType(type,exclude){const p=state.parts.find(x=>x.type===type&&x.uid!==exclude&&cellsOf(x)&&cellsOf(x)[0].chords[0]);return p?cellsOf(p)[0].chords[0].lib||null:null;}
 function genPart(uid,keepLocks){
@@ -589,8 +618,10 @@ const fretText=v=>v?v.frets.map(f=>f<0?'x':f).join(' '):'';
 
 /* ---------- 聲音：溫暖的撥弦 + 箱體共鳴 + 殘響 ---------- */
 let ctx=null,master=null,sources=[],timers=[],playing=false;
+// iPhone 靜音開關打開時，網頁聲音也照樣播放（iOS 17+）
+function setSession(t){try{if(navigator.audioSession)navigator.audioSession.type=t;}catch(e){}}
 function ac(){
-  if(!ctx){const C=window.AudioContext||window.webkitAudioContext;ctx=new C();
+  if(!ctx){setSession('playback');const C=window.AudioContext||window.webkitAudioContext;ctx=new C();
     master=ctx.createGain();master.gain.value=.85;
     const body=ctx.createBiquadFilter();body.type='peaking';body.frequency.value=185;body.Q.value=1;body.gain.value=5;
     const low=ctx.createBiquadFilter();low.type='lowshelf';low.frequency.value=320;low.gain.value=2;
@@ -633,7 +664,7 @@ function playChord(c,t,dur,vel,up,out){
     const strs=v.frets.map((f,i)=>f<0?null:{m:OPENS[i]+f+state.capo,i}).filter(Boolean);
     const ord=up?strs.slice().reverse().slice(0,4):strs;
     ord.forEach((x,k)=>{const string=x.i;const sv=vel*(up?.45:1)*(1-string*.05)*(.92+Math.random()*.16);pluck(x.m,t+k*(up?.024:.034)+Math.random()*.006,sv*.9,dur,out);});return;}}
-  const root=mod(state.key+c.r);let bass=36+root;if(bass<40)bass+=12;
+  const root=mod(state.key+c.r);let bass=36+mod(state.key+(c.b!==undefined?c.b:c.r));if(bass<40)bass+=12;
   tone(bass,t,dur,vel*.9,out);
   Q[c.q].iv.forEach(i=>{let n=60+mod(root+i);if(n>71)n-=12;tone(n,t,dur,vel*.75,out);});
 }
@@ -674,6 +705,7 @@ function highlight(it){
 }
 
 /* ---------- 畫面 ---------- */
+const LOCKO='<svg class="lk" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5 7V5a3 3 0 0 1 6-.6" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
 const LOCK='<svg class="lk" viewBox="0 0 16 16" aria-label="已鎖定"><rect x="3" y="7" width="10" height="8" rx="1.5" fill="currentColor"/><path d="M5 7V5a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
 function staffSVG(n,empty){
   let s='<svg class="staff" viewBox="0 0 100 36" preserveAspectRatio="none" aria-hidden="true">';
@@ -686,17 +718,18 @@ function measHTML(p,i,cell,len){
   const cls=['meas'];if(i%4===0)cls.push('first');if(i===len-1)cls.push('end');if(p.uid===state.activeUid&&(p.mood||state.mood)&&i===firstEmpty(p))cls.push('target');
   const ly=cell?cell.lyric:((p.lyrics&&p.lyrics[i])||'');
   let inner,label;
-  if(!cell||!cell.chords.length){cls.push('blank');inner=`<div class="chd"><span class="one"><span class="nm">—</span></span></div>${p.melody&&p.melody.notes.length?melodySVG(p,i):staffSVG(1,true)}`;label=`第 ${i+1} 小節，還沒有和弦。長按可以自選和弦`;}
+  const lockBtn=cell?`<button type="button" class="mlock${cell.locked?' on':''}" data-act="mlock" data-u="${p.uid}" data-i="${i}" aria-pressed="${cell.locked}" aria-label="${cell.locked?'解鎖':'鎖定'}第 ${i+1} 小節">${cell.locked?LOCK:LOCKO}</button>`:'';
+  if(!cell||!cell.chords.length){cls.push('blank');if(cell&&cell.locked)cls.push('rest');inner=`<div class="chd"><span class="one"><span class="nm">${cell&&cell.locked?'留白':'—'}</span></span></div>${p.melody&&p.melody.notes.length?melodySVG(p,i):staffSVG(1,true)}`;label=cell&&cell.locked?`第 ${i+1} 小節，刻意留白（已鎖定）。長按可以自選和弦`:`第 ${i+1} 小節，還沒有和弦。長按可以自選和弦`;}
   else{
     const two=cell.chords.length>1;if(two)cls.push('two');
     const big=state.showDiag?(two?30:38):0;
     const chd=cell.chords.map(c=>`<span class="one"><span><span class="nm f-${fn(c)}${kindOf(c)==='bor'?' bor':''}">${esc(chordName(c))}</span><br><span class="rm">${esc(romanOf(c))}</span></span>${big?`<span class="dg">${diagram(curV(c),big,false)}</span>`:''}</span>`).join('');
     const cap=state.capo?`<div class="cap">實際 ${cell.chords.map(c=>esc(chordName(c,true))).join(' ')}</div>`:'';
-    inner=`${cell.locked?LOCK:''}${isUnsure(p,i,cell)?'<span class="unsure" title="旋律跟這個和弦不太吻合">?</span>':''}<div class="chd">${chd}</div>${cap}${p.melody&&p.melody.notes.length?melodySVG(p,i):staffSVG(cell.chords.length,false)}`;
+    inner=`${isUnsure(p,i,cell)?'<span class="unsure" title="旋律跟這個和弦不太吻合">?</span>':''}<div class="chd">${chd}</div>${cap}${p.melody&&p.melody.notes.length?melodySVG(p,i):staffSVG(cell.chords.length,false)}`;
     label=`第 ${i+1} 小節 ${cell.chords.map(c=>chordName(c)).join('、')}。按一下試聽，長按打開詳情`;
   }
   return `<div class="${cls.join(' ')}" id="m-${p.uid}-${i}">
-    <button type="button" class="hit" data-u="${p.uid}" data-i="${i}" aria-label="${esc(label)}">${inner}</button>
+    <button type="button" class="hit" data-u="${p.uid}" data-i="${i}" aria-label="${esc(label)}">${inner}</button>${lockBtn}
     <input class="lyin" type="text" data-ly="1" data-u="${p.uid}" data-i="${i}" value="${esc(ly)}" placeholder="歌詞" aria-label="第 ${i+1} 小節歌詞" autocomplete="off" enterkeyhint="next"></div>`;
 }
 function junctionHTML(a,b){
@@ -784,8 +817,11 @@ function feelCands(uid,i){
 }
 const ROMS=['I','♭II','II','♭III','III','IV','♯IV','V','♭VI','VI','♭VII','VII'];
 const FGUESS={0:'T',1:'D',2:'S',3:'T',4:'T',5:'S',6:'D',7:'D',8:'S',9:'T',10:'S',11:'D'};
-const famQ=q=>['maj','maj7','add9','sus2','sus4','7'].includes(q)?'M':['min','m7'].includes(q)?'m':'d';
-function makeChord(r,q){
+const famQ=q=>['maj','maj7','add9','sus2','sus4','7','7sus4','6'].includes(q)?'M':['min','m7','m6','madd9'].includes(q)?'m':'d';
+function makeChord(r,q,b){
+  const c=makeChord0(r,q);if(b!==undefined&&b!==null&&b!==r)c.b=b;return c;}
+const pk=()=>makeChord(sh.pr,sh.pq,sh.pb);
+function makeChord0(r,q){
   const ids=Object.keys(LIB).filter(id=>LIB[id].r===r);
   const id=ids.find(id=>LIB[id].q===q)||ids.find(id=>famQ(LIB[id].q)===famQ(q)&&LIB[id].type!=='sec');
   if(id)return Object.assign(inst(id),{q});
@@ -793,16 +829,18 @@ function makeChord(r,q){
   const suf=q==='dim'?'°':q==='m7b5'?'ø7':(ROMSUF[q]||'');
   return {r,q,roman:rom+suf,f:FGUESS[r],vi:0,flat:rom.includes('♭')?true:undefined,sharp:rom.includes('♯')?true:undefined,custom:true};
 }
-const QLIST=[['maj','大三'],['min','m'],['7','7'],['maj7','maj7'],['m7','m7'],['sus2','sus2'],['sus4','sus4'],['add9','add9'],['dim','dim'],['dim7','dim7'],['m7b5','m7♭5']];
+const QLIST=[['maj','大三'],['min','m'],['7','7'],['maj7','maj7'],['m7','m7'],['sus2','sus2'],['sus4','sus4'],['add9','add9'],['7sus4','7sus4'],['6','6'],['m6','m6'],['madd9','madd9'],['dim','dim'],['dim7','dim7'],['m7b5','m7♭5']];
 const joinWord=t=>t>=4?'很順':t>=3?'順':t>=2?'可以':'不太順';
 function pickHTML(uid,i,cell){
   const k=shapeKey(),dia=[0,2,4,5,7,9,11];
   const rootName=r=>{const pc=mod(k+r);if(dia.includes(r))return (FLATKEYS.has(k)?NOTE_F:NOTE_S)[pc];return (r===6?NOTE_S:NOTE_F)[pc];};
-  const ch=makeChord(sh.pr,sh.pq),{P,N}=neighbors(uid,i),two=cell.chords.length>1,empty=!cell.chords.length;
+  const ch=pk(),{P,N}=neighbors(uid,i),two=cell.chords.length>1,empty=!cell.chords.length;
   const pp=pOf(uid),fitQ=['I','ii','iii','IV','V','vi','vii','iv','bVI','bVII','bIII'].map(id=>({id,f:melFitAt(pp,i,inst(id))})).filter(x=>x.f!==null&&x.f>=.3).sort((a,b)=>b.f-a.f).slice(0,2).map(x=>x.id);
   const quick=['I','ii','iii','IV','V','vi','vii','iv','bVI','bVII','bIII'].map(id=>{const c=inst(id);const on=sh.pr===c.r&&sh.pq===c.q;
     return `<button type="button" class="qc${on?' on':''}${LIB[id].type==='bor'?' qb':''}" data-act="pq" data-r="${c.r}" data-q="${c.q}" aria-pressed="${on}"><b>${esc(chordName(c))}</b><small>${esc(romanOf(c))}${fitQ.includes(id)?' ♪搭':''}</small></button>`;}).join('');
   const roots=Array.from({length:12},(_,r)=>`<button type="button" class="rt${dia.includes(r)?' dia':''}${sh.pr===r?' on':''}" data-act="pr" data-r="${r}" aria-pressed="${sh.pr===r}">${rootName(r)}</button>`).join('');
+  const ct=Q[sh.pq].iv.map(x=>mod(sh.pr+x));
+  const basses=Array.from({length:12},(_,b)=>b===sh.pr?'':`<button type="button" class="rt${ct.includes(b)?' dia':''}${sh.pb===b?' on':''}" data-act="pbs" data-b="${b}" aria-pressed="${sh.pb===b}">/${rootName(b)}</button>`).join('');
   const quals=QLIST.map(([q,n])=>`<button type="button" class="rt${sh.pq===q?' on':''}" data-act="pqq" data-q="${q}" aria-pressed="${sh.pq===q}">${n}</button>`).join('');
   const fb=[];if(P&&!two)fb.push(`接前一個 ${esc(chordName(P))}：<b>${joinWord(T(P,ch))}</b>`);if(N)fb.push(`接下一個 ${esc(chordName(N))}：<b>${joinWord(T(ch,N))}</b>`);
   {const mf=melFitAt(pOf(uid),i,ch);if(mf!==null)fb.push(`跟旋律：<b>${mf>=.3?'吻合':mf>=0?'還可以':'不太吻合'}</b>`);}
@@ -818,15 +856,17 @@ function pickHTML(uid,i,cell){
     <p class="hint">這個調常用的和弦（虛線框是借用和弦）</p><div class="qgrid">${quick}</div>
     <p class="hint">或自己組合：先選根音，再選種類（深色是調內的音）</p>
     <div class="rgrid">${roots}</div><div class="rgrid">${quals}</div>
-    <p class="hint">套用後想保留這個和弦，可以按上方的「鎖定這小節」，之後重新產生或換情緒就不會被改掉。</p>`;
+    <p class="hint">低音（想做 C/E、G/B 這種斜線和弦才選；深色是和弦裡的音，最常用）</p>
+    <div class="rgrid"><button type="button" class="rt${sh.pb===undefined?' on':''}" data-act="pbs" data-b="" aria-pressed="${sh.pb===undefined}">不換</button>${basses}</div>
+    <p class="hint">套用後想保留這個和弦，可以點樂譜上小節角落的鎖，之後重新產生或換情緒就不會被改掉。</p>`;
 }
 function pickApply(m){
-  const cell=cellsOf(pOf(sh.uid))[sh.i],ch=makeChord(sh.pr,sh.pq);
+  const cell=cellsOf(pOf(sh.uid))[sh.i],ch=pk();
   cell.unsure=false;
   if(m==='all')cell.chords=[ch];else if(m==='add')cell.chords=[cell.chords[0],ch];else if(m==='first')cell.chords[0]=ch;else cell.chords[1]=ch;
   renderScore();save();renderSheet();toast(`已放入 ${chordName(ch)}`);
 }
-function pickPreview(ctxt){const ch=makeChord(sh.pr,sh.pq);if(!ctxt){playSeq([ch]);return;}const {P,N}=neighbors(sh.uid,sh.i);playSeq([P,ch,N]);}
+function pickPreview(ctxt){const ch=pk();if(!ctxt){playSeq([ch]);return;}const {P,N}=neighbors(sh.uid,sh.i);playSeq([P,ch,N]);}
 const isBarre=c=>{const v=curV(c);return !!v&&v.d>=2;};
 function noteIn(pc,X){const k=shapeKey();return (prefOf(X,k)==='flat'?NOTE_F:NOTE_S)[mod(k+pc)];}
 function easyCands(uid,i){
@@ -900,7 +940,8 @@ function renderSheet(){
     ${shTop}${topTabs}
     <div class="sh-chords">${head}</div>
     ${empty?'':`<div class="row"><button type="button" class="btn" data-act="playone">▶ 只聽這小節</button><button type="button" class="btn" data-act="playcell">▶ 含前後小節</button>
-      <button type="button" class="btn${cell.locked?' pri':''}" data-act="lock" aria-pressed="${cell.locked}">${cell.locked?'已鎖定':'鎖定這小節'}</button></div>`}
+      <button type="button" class="btn${cell.locked?' pri':''}" data-act="lock" aria-pressed="${cell.locked}">${cell.locked?'已鎖定':'鎖定這小節'}</button>
+      <button type="button" class="btn" data-act="clearcell">清除和弦（留白）</button></div>`}
     ${cell.lyric?`<p class="hint">歌詞：${esc(cell.lyric)}</p>`:''}
     <div class="tabs" role="tablist">${(empty?[['pick','自選和弦']]:[['pick','自選和弦'],['feel','強化情緒'],['easy','更好彈'],['fancy','更高級']]).map(([k,n])=>`<button type="button" role="tab" class="${sh.tab===k?'on':''}" data-act="tab" data-t="${k}" aria-selected="${sh.tab===k}">${n}</button>`).join('')}</div>
     ${body}`;
@@ -908,7 +949,7 @@ function renderSheet(){
 function openSheet(uid,i){
   const part=pOf(uid);
   if(!cellsOf(part)){part.options=[Array.from({length:part.len},(_,k)=>({chords:[],locked:false,lyric:(part.lyrics||[])[k]||''}))];part.pick=0;delete part.lyrics;}
-  const cur0=cellsOf(part)[+i].chords[0];sh.pr=cur0?cur0.r:0;sh.pq=cur0?cur0.q:'maj';
+  const cur0=cellsOf(part)[+i].chords[0];sh.pr=cur0?cur0.r:0;sh.pq=cur0?cur0.q:'maj';sh.pb=cur0?cur0.b:undefined;
   if(!cur0)sh.tab='pick';
   if(sh.uid!==uid||sh.i!==+i)sh.sel=-1;
   sh.uid=uid;sh.i=+i;sh.at=Date.now();renderSheet();const s=document.getElementById('sheet');s.hidden=false;document.body.style.overflow='hidden';
@@ -940,7 +981,7 @@ function delPart(uid){const i=pIdx(uid),p=state.parts[i];undo=()=>{state.parts.s
 
 /* ---------- 事件 ---------- */
 function toast(t,action){const e=document.getElementById('toast');document.getElementById('toastT').textContent=t;e.classList.toggle('act',!!action);e.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove('show'),action?5000:1600);}
-document.getElementById('toastB').addEventListener('click',()=>{if(undo){undo();undo=null;renderMood();renderScore();save();toast('已復原');}});
+document.getElementById('toastB').addEventListener('click',()=>{if(undo){undo();undo=null;renderMood();renderScore();save();if(!document.getElementById('sheet').hidden)renderSheet();toast('已復原');}});
 document.addEventListener('click',e=>{
   const mood=e.target.closest('[data-mood]');
   if(mood){const first=!state.mood;state.mood=mood.dataset.mood;if(state.sub===state.mood)state.sub='';state.bpm=MOODS.find(x=>x.id===state.mood).bpm;if(!state.activeUid||!pOf(state.activeUid))state.activeUid=(state.parts[0]||{}).uid;renderAll();
@@ -955,13 +996,14 @@ document.addEventListener('click',e=>{
   else if(act==='del')delPart(u);
   else if(act==='jump'){e.preventDefault();const el=document.getElementById('part-'+u);if(el)el.scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});}
   else if(act==='pick'){pOf(u).pick=+a.dataset.k;renderScore();save();}
-  else if(act==='regen'){const p=pOf(u);if(!p.mood&&!state.mood){toast('先選這首歌的情緒，才能自動產生');return;}const c=ensureCells(p),empty=c.some(x=>!x.chords.length);
+  else if(act==='regen'){const p=pOf(u);if(!p.mood&&!state.mood){toast('先選這首歌的情緒，才能自動產生');return;}const c=ensureCells(p),empty=c.some(x=>!x.chords.length&&!x.locked);
     if(empty)genFill(u);else genPart(u,true);renderScore();save();toast(empty?'已自動排好還沒選的小節（每格長按可看理由）':'已重新產生 3 個方案（鎖定的小節不變）');}
   else if(act==='stepgo'){const p=pOf(u),i=+a.dataset.i,ch=stepCache[u+':'+i][+a.dataset.k].c,cells=ensureCells(p);cells[i].chords=[JSON.parse(JSON.stringify(ch))];state.activeUid=u;renderScore();save();
     const P=i>0&&cells[i-1].chords.length?cells[i-1].chords.slice(-1)[0]:prevChordBefore(pIdx(u));playSeq([P,ch].filter(Boolean));}
   else if(act==='stepprev'){const p=pOf(u),i=+a.dataset.i,ch=stepCache[u+':'+i][+a.dataset.k].c,cells=ensureCells(p);const P=i>0&&cells[i-1].chords.length?cells[i-1].chords.slice(-1)[0]:prevChordBefore(pIdx(u));const N=cells[i+1]&&cells[i+1].chords[0];playSeq([P,ch,N].filter(Boolean));}
   else if(act==='stepother'){openSheet(u,a.dataset.i);sh.top='chord';sh.tab='pick';renderSheet();}
   else if(act==='stepact'){state.activeUid=u;renderScore();save();const el=document.getElementById('step-'+u);if(el)el.scrollIntoView({block:'nearest'});}
+  else if(act==='mlock'){const c=ensureCells(pOf(u))[+a.dataset.i];c.locked=!c.locked;renderScore();save();toast(c.locked?(c.chords.length?'已鎖定，自動產生不會改這小節':'已鎖定，這小節會保持留白'):'已解鎖');}
   else if(act==='stepclear'){const p=pOf(u);(cellsOf(p)||[]).forEach(c=>{if(!c.locked)c.chords=[];});p.options=[cellsOf(p)];p.pick=0;state.activeUid=u;renderScore();save();toast('已清空沒鎖定的小節，可以從頭選');}
   else if(act==='playpart'){if(playing){stopAll();return;}const p=pOf(u);playCells(cellsOf(p).map((cell,i)=>({uid:u,i,cell,label:partName(p)})));}
   else if(act==='moodDemo'){const m=MOODS.find(x=>x.id===state.mood);playSeq(m.ex.concat([m.ex[0]]).map(id=>inst(id)));}
@@ -1002,10 +1044,12 @@ document.addEventListener('click',e=>{
   else if(act==='melsave')melSave();
   else if(act==='melredo'){stopAll();mel.phase='idle';renderMel();}
   else if(act==='meldel'){const p=pOf(mel.uid);delete p.melody;delete p.fit;(p.options||[]).forEach(o=>o.forEach(c=>c.unsure=false));renderScore();save();renderMel();toast('已刪除這段的旋律');}
-  else if(act==='pq'){sh.pr=+a.dataset.r;sh.pq=a.dataset.q;renderSheet();playSeq([makeChord(sh.pr,sh.pq)]);}
-  else if(act==='pr'){sh.pr=+a.dataset.r;renderSheet();playSeq([makeChord(sh.pr,sh.pq)]);}
-  else if(act==='pqq'){sh.pq=a.dataset.q;renderSheet();playSeq([makeChord(sh.pr,sh.pq)]);}
+  else if(act==='pq'){sh.pr=+a.dataset.r;sh.pq=a.dataset.q;sh.pb=undefined;renderSheet();playSeq([pk()]);}
+  else if(act==='pr'){sh.pr=+a.dataset.r;if(sh.pb===sh.pr)sh.pb=undefined;renderSheet();playSeq([pk()]);}
+  else if(act==='pqq'){sh.pq=a.dataset.q;renderSheet();playSeq([pk()]);}
   else if(act==='papply')pickApply(a.dataset.m);
+  else if(act==='pbs'){sh.pb=a.dataset.b===''?undefined:+a.dataset.b;if(sh.pb===sh.pr)sh.pb=undefined;renderSheet();playSeq([pk()]);}
+  else if(act==='clearcell'){const c=cellsOf(pOf(sh.uid))[sh.i],old=JSON.parse(JSON.stringify(c.chords));c.chords=[];c.unsure=false;undo=()=>{c.chords=old;};sh.tab='pick';renderScore();save();renderSheet();toast(c.locked?'已清除，這小節會保持留白':'已清除。想一直留白，點小節角落的鎖','復原');}
   else if(act==='pone')pickPreview(false);
   else if(act==='pctx')pickPreview(true);
   else if(act==='capoapply'){state.capo=+a.dataset.c;renderAll();renderSheet();toast('已套用移調夾，實際音高不變');}
@@ -1464,6 +1508,7 @@ function melClick(t,acc){const o=ctx.createOscillator(),g=ctx.createGain();o.fre
 async function melGo(){
   const p=pOf(mel.uid),c=ac();stopAll();
   let stream;
+  setSession('play-and-record');
   try{if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error('none');
     stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});}
   catch(e){mel.phase='err';mel.err=e&&e.name==='NotAllowedError'?'麥克風被拒絕了。請在瀏覽器的網址列旁開啟麥克風權限後再試一次。':'這裡不能使用麥克風（在 Claude 裡預覽時就會這樣）。請用 GitHub Pages 的網址打開，或改用下方的上傳錄音檔。';renderMel();return;}
@@ -1476,7 +1521,7 @@ async function melGo(){
   mel.phase='count';renderMel();
   for(let i=0;i<p.len;i++)timers.push(setTimeout(()=>{mel.phase='rec';mel.barNow=i;const s=document.getElementById('melStat');if(s)s.textContent=`錄音中：第 ${i+1} / ${p.len} 小節`;},Math.max(0,(T0+i*bar-c.currentTime)*1000)));
   let done=false;
-  mel.stop=(cancel)=>{if(done)return;done=true;clearTimeout(mel.endT);try{proc.disconnect();src.disconnect();mute.disconnect();}catch(_){}stream.getTracks().forEach(t=>t.stop());mel.stop=null;stopAll();
+  mel.stop=(cancel)=>{if(done)return;done=true;clearTimeout(mel.endT);try{proc.disconnect();src.disconnect();mute.disconnect();}catch(_){}setSession('playback');stream.getTracks().forEach(t=>t.stop());mel.stop=null;stopAll();
     if(!cancel)melAnalyze(chunks,c.sampleRate,T0-tRef,'mic');};
   mel.endT=setTimeout(()=>mel.stop&&mel.stop(false),(T0+p.len*bar+beat*.5-c.currentTime)*1000);
 }
@@ -1639,7 +1684,7 @@ function hitChord(c,act,t,dur,out,gain){
     if(act==='U'){strs.slice(-4).reverse().forEach((x,k)=>pluck(x.m,t+k*.026+jit(),.42*g*hv(),dur,out));return;}
     const pickStr=idx=>strs.find(x=>x.i===idx)||strs.filter(x=>x.i>idx)[0]||strs[strs.length-1];
     const x=act==='B'?strs[0]:pickStr({a:3,b:4,c:5}[act]);pluck(x.m,t+jit(),(act==='B'?.85:.7)*g*hv(),dur,out);return;}}
-  const root=mod(state.key+c.r);let bass=36+root;if(bass<40)bass+=12;
+  const root=mod(state.key+c.r);let bass=36+mod(state.key+(c.b!==undefined?c.b:c.r));if(bass<40)bass+=12;
   const up=Q[c.q].iv.map(i=>{let n=60+mod(root+i);if(n>71)n-=12;return n;}).sort((a,b)=>a-b);
   if(act==='D'){tone(bass,t,dur,.8*g,out);up.forEach(n=>tone(n,t,dur,.65*g,out));return;}
   if(act==='U'){up.forEach(n=>tone(n,t,dur,.4*g,out));return;}
@@ -1679,7 +1724,7 @@ function patPlay(){const p=pOf(pat.uid),cells=(cellsOf(p)||[]).filter(c=>c.chord
 /* ---------- 一步一步選和弦：候選與理由 ---------- */
 const ROLE={I:'安定、回家',ii:'柔和地往前',iii:'曖昧、淡淡的',IV:'溫暖、開闊',V:'緊張、想回家',vi:'感傷、內省',vii:'不安',iv:'苦澀、懷念',bVI:'壯闊',bVII:'豁達',bIII:'意外的轉折',Vii:'推向下一個 ii',Vvi:'推向 vi，戲劇性',VIV:'推向 IV',VV:'推向 V，拉高期待'};
 const roleOf=c=>c.lib&&ROLE[c.lib]?ROLE[c.lib]:({T:'穩定',S:'離開',D:'緊張'})[fn(c)];
-function firstEmpty(p){const c=cellsOf(p);if(!c)return 0;const k=c.findIndex(x=>!x.chords.length);return k;}
+function firstEmpty(p){const c=cellsOf(p);if(!c)return 0;const k=c.findIndex(x=>!x.chords.length&&!x.locked);return k;}
 function isUnsure(p,i,cell){if(!hasMel(p)||!p.fit||!p.fit[i]||!cell||!cell.chords.length)return false;const w=p.fit[i],h=w.h;if(!h)return false;const s=h[0].reduce((a,v)=>a+v,0)+h[1].reduce((a,v)=>a+v,0);
   const f=cell.chords.length>1?(halfFit(cell.chords[0],h[0])+halfFit(cell.chords[1],h[1]))/2:fitScore(cell.chords[0],w);return s>0&&f<.2;}
 function melFitAt(p,i,c){if(!hasMel(p)||!p.fit||!p.fit[i])return null;const w=p.fit[i],s=w.c.reduce((a,v)=>a+v,0)+w.l.reduce((a,v)=>a+v,0);return s>0?fitScore(c,w):null;}
@@ -1693,6 +1738,10 @@ function whyParts(p,i,c){
     else{const t=T(P,c);out.push(`接在 ${chordName(P)} 後面${t>=4?'很順':t>=3?'自然':'有點意外'}（${motionText(P,c)}）`);}}
   if(m&&c.lib){if(m.boost.includes(c.lib))out.push(`「${m.name}」常用`);else if(m.reduce.includes(c.lib))out.push(`在「${m.name}」裡比較少見，會帶出不同的味道`);}
   if(kindOf(c)==='bor')out.push('從小調借來的和弦，讓聲音一下變色');
+  if(c.b!==undefined){const bn=x=>x.b!==undefined?x.b:x.r,st=(a,b)=>{const d=Math.abs(mod(b-a)>6?mod(b-a)-12:mod(b-a));return d>0&&d<=2;};
+    const nm=chordName(c).split('/')[1],sp=P&&st(bn(P),c.b),sn=N&&st(c.b,bn(N));
+    if(sp||sn)out.push(`低音彈 ${nm}，讓低音${sp?'從前一個和弦':''}一步一步走${sn?'到下一個和弦':''}，聽起來像一條線在動`);
+    else out.push(`低音換成 ${nm}，同一個和弦聽起來更輕、更有流動感`);}
   if(i===0&&m&&startSet(p,m).includes(c.lib))out.push('適合當這段的開頭');
   if(i===L-1){out.push(c.lib==='I'?'回到主和弦，有「說完了」的感覺':c.lib==='V'?'停在 V，像話還沒說完，帶進下一段':c.lib==='vi'?'停在小和弦，留下一點憂傷':c.lib==='IV'?'停在 IV，溫和、沒有完全結束':'結尾停在這裡，會有懸著的感覺');}
   else if(p.type==='pre'&&i>=L-2&&tension(c)>=3)out.push('越來越緊張，準備進副歌');
